@@ -1,4 +1,4 @@
-# Промт-Спецификация системы макроэкономического мониторинга рисков Канады
+Markdown# Промт-Спецификация системы макроэкономического мониторинга рисков Канады
 
 Версия спецификации: 1.3.0-revised
 Дата спецификации: 2026-08-04
@@ -402,3 +402,4 @@ CREATE TABLE audit_records (
     INDEX idx_entity (entity_type, entity_id),
     INDEX idx_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+13. Backtest Severity Threshold RulesПри ранжировании risk_band и detection_threshold_band сравнение выполняется по числовому рангу:very_low = 1low = 2moderate = 3high = 4severe = 5Правило детекции:$$\text{detected} = \text{true} \iff (\text{risk\_score} \ge \text{detection\_threshold\_score}) \lor (\text{band\_rank}(\text{risk\_band}) \ge \text{band\_rank}(\text{detection\_threshold\_band}))$$Поле backtest_runs.false_positive_count объявляется как INT UNSIGNED NOT NULL DEFAULT 0.14. Definition of Done (DoD)Все скоры и веса хранятся строго в DECIMAL(10,4).В Risk Engine полностью исключён float.snapshot_observations использует UNIQUE (snapshot_id, series_id, observation_id).В DDL присутствуют явные FOREIGN KEY и каскадные правила.Worked Example включает frequency_discount и полностью воспроизводится в PHPUnit интеграционном тесте.ScientificIntegrityGuard полностью блокирует публикацию невалидных отчётов.Laravel/WordPress конструкции полностью отсутствуют.
