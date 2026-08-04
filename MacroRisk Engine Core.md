@@ -1,21 +1,21 @@
+# МАТРИЦА ИСПРАВЛЕНИЙ КОРЕЙСКОЙ СХЕМЫ (VERSION 1.7.1-FINAL)
+
+Ниже приводится полная, консолидированная и очищенная от всех артефактов и неточностей документация проекта **MacroRisk** в версии **1.7.1-FINAL**. Все четыре файла приведены в строгом соответствии с последними правками: устранена рассинхронизация ENUM-статусов, жестко зафиксированы правила синхронизации `release_late`, исправлена логика уровня применения `missing_no_historical_data`, унифицированы ошибки и полностью исключена любая LaTeX-разметка.
+
+---
+
 # ФАЙЛ 1. MASTER ARCHITECTURE AND TECHNICAL SPECIFICATION
 
-Версия: 1.7.0-FINAL
-
+Версия: 1.7.1-FINAL
 Тип проекта: Новая самостоятельная система
-
 Язык: PHP 8.3+ (Framework-independent, Laravel запрещён)
-
 СУБД: MySQL 8.4 LTS InnoDB utf8mb4
-
 Локаль: en-CA (fr-CA в Phase 3)
-
 Статус: Implementation-Ready Deterministic Source of Truth
 
 ## 1. АРХИТЕКТУРНЫЕ ПРИНЦИПЫ И ОГРАНИЧЕНИЯ
 
 Система MacroRisk — это прозрачный, аудируемый и детерминированный механизм оценки макроэкономических рисков.
-
 Приоритеты: Корректность важнее количества функций. Прозрачность важнее автоматизации. Детерминизм важнее эвристик. Аудируемость важнее удобства.
 
 Обязательный принцип: Every production decision must be reproducible.
@@ -31,28 +31,39 @@
 
 ## 2. ПРАВИЛА ОБРАБОТКИ ВРЕМЕНИ И ДАННЫХ
 
-Все входящие даты и времена должны быть нормализованы в таймзону TIMEZONE (UTC) перед сохранением в базу данных.
-
+Все входящие даты и времена должны быть нормализованы в таймзону UTC перед сохранением в базу данных.
 Для хранения используется формат DATETIME(6) для обеспечения микросекундной точности, необходимой для дедупликации и предотвращения состояния гонки (race conditions).
 
 ## 3. ИСТОЧНИКИ ДАННЫХ И ЖИЗНЕННЫЙ ЦИКЛ
 
 Официальные источники-кандидаты: Statistics Canada (WDS, Full Table Download), Bank of Canada (Valet API), OSFI.
-
 Прямые источники CMHC и CREA запрещены как production default (используются эквиваленты StatCan).
 
-SOURCE VALIDATION STATE MACHINE (ENUM)
+SOURCE VALIDATION STATE MACHINE (ЕДИНЫЙ КАНОНИЧЕСКИЙ ENUM)
+Канонические состояния для таблиц эндпоинтов и серий (с учетом устранения рассинхронизации из v1.7.0):
 
-Формальные состояния базового автомата:
-
-* pending_validation: Начальное состояние.
-* valid: Переход ИСКЛЮЧИТЕЛЬНО после успешной проверки (HTTP 200, схема верна, частота подтверждена). Risk Officer не может установить valid вручную без проверки.
-* temporary_unavailable: Ошибка (HTTP 500, 503, timeout) или HTTP 429 (rate limited). Маппинг остаётся валидным, но использование в расчетах заблокировано. В поле validation_error_code при этом явно записывается точный код ошибки (например, SOURCE_TIMEOUT или SOURCE_RATE_LIMITED).
-* schema_mismatch: HTTP 200, но ожидаемые поля отсутствуют.
-* series_mapping_stale: HTTP 404, таблица/вектор удалены, API deprecation. Production use блокируется. Возврат в valid только после новой автоматической проверки.
+* pending_validation: Начальное состояние для любой вновь зарегистрированной серии или эндпоинта.
+Разрешённые переходы: -> valid (успешная live-проверка), -> unavailable (инфраструктурный отказ), -> access_denied (проблема авторизации), -> temporary_unavailable (таймаут/лимит), -> schema_mismatch (расхождение схемы), -> data_pending (grace period).
+* valid: Рабочее состояние, разрешающее использование данных в production (при условии выполнения требований License Gate).
+Разрешённые переходы: -> temporary_unavailable (временные сетевые ошибки, HTTP 429/503), -> series_mapping_stale (HTTP 404/410, удаление таблицы/вектора), -> schema_mismatch (изменение формата ответа), -> access_denied (отзыв/истечение credentials), -> release_late (наступила ожидаемая дата релиза, данных нет).
+* temporary_unavailable: Временная блокировка использования серии в расчётах из-за сетевых сбоев, таймаутов, лимитов или HTTP 500/503.
+Правило записи error code: при таймауте validation_error_code = 'SOURCE_TIMEOUT'; по причине rate limit — validation_error_code = 'SOURCE_RATE_LIMITED'; по причине HTTP 500 — validation_error_code = 'HTTP_500'. Само значение validation_status в этих случаях строго 'temporary_unavailable'.
+Разрешённые переходы: -> valid (следующий успешный опрос), -> series_mapping_stale или -> unavailable (если временная ошибка переросла в постоянную).
+* schema_mismatch: HTTP 200 получен, но ожидаемые поля отсутствуют.
+Разрешённые переходы: -> valid (после обновления адаптера и успешной повторной проверки).
+* series_mapping_stale: HTTP 404/410, таблица/вектор удалены, API deprecation. Production use блокируется.
+Разрешённые переходы: -> valid исключительно после исправления маппинга и успешной live-проверки.
 * data_pending: Для новых серий в grace period (схема верна, время релиза ещё не наступило). Production use запрещён.
+Разрешённые переходы: -> valid (успешная первая загрузка), -> release_late, -> temporary_unavailable.
+* unavailable: Постоянный инфраструктурный сбой (перманентный отказ хоста, удаление сервиса без редиректа). Триггер: фиксируется после исчерпания retry_policy.
+Разрешённые переходы: -> valid (после исправления инфраструктуры и успешной перепроверки), -> series_mapping_stale.
+* access_denied: HTTP 401/403 или истечение срока действия API-ключа.
+Разрешённые переходы: -> valid только после обновления учётных данных и успешной повторной проверки.
+* release_late: Область применения строго ограничена уровнем серии. Используется, только если задержка публикации подтверждена для текущего/последнего ожидаемого релиза серии.
+Правило синхронизации: когда для конкретного периода в release_calendars.release_status устанавливается 'release_late' и этот период является последним ожидаемым для серии, series.validation_status автоматически переводится в 'release_late' тем же фоновым процессом. Источник истины — релизный календарь.
+Разрешённые переходы: -> valid (данные поступили и прошли ingestion), -> series_mapping_stale (задержка сменилась удалением серии).
 
-Дополнительные операционные состояния, используемые в расширенных журналах и схеме БД (расширяющие ENUM): unavailable, access_denied, source_timeout, source_rate_limited, release_late, missing_no_historical_data.
+*Примечание по missing_no_historical_data:* Это состояние НИКОГДА не записывается в series.validation_status. Оно применяется исключительно на уровне результата конкретного расчёта (risk_score_results.calculation_status) при запросе бэктеста на дату, предшествующую началу истории серии.
 
 LICENSE GATE STATE MACHINE (ENUM)
 
@@ -60,137 +71,36 @@ LICENSE GATE STATE MACHINE (ENUM)
 * public_open_candidate: Источник выглядит публичным, terms of use не проверены.
 * public_open: ТОЛЬКО после задокументированного review (Admin или Risk Officer).
 * requires_license: При обнаружении платной подписки или ограничений.
-
-Инвариант безопасности: production_allowed = true возможно ТОЛЬКО если license_status = public_open (как на уровне таблицы series, так и на уровне data_sources). Система (или триггер) обязана блокировать или сбрасывать флаг production_allowed, если лицензия меняется на отличную от public_open.
+Инвариант безопасности: production_allowed = true возможно ТОЛЬКО если license_status = public_open.
 
 RELEASE CALENDAR RULES
-
 Каждая серия должна иметь записи в Release Calendar для production-использования.
 
-* expected: Дата релиза в будущем.
-* delayed: expected_release_date наступила, данных нет.
-* release_late: delay превышает tolerance.
-* missing: источник подтверждает отсутствие релиза (не означает stale_mapping).
-* revised: релиз относится к прошлому периоду.
-* Разрешение конфликта release_date: Если для наблюдения существуют и actual_release_date, и estimated_release_date, система ОБЯЗАНА использовать actual_release_date.
-* Если данные нужны для production, а official release date отсутствует: estimated_release_date = ingestion_date, release_date_quality = fallback_to_ingestion, release_date_source = system_inferred.
-
-Источники данных и жизненный цикл: Source Validation State Machine (Полная спецификация состояний и переходов)
-Каждая серия и эндпоинт в системе находятся в одном из детерминированных состояний валидации. Все переходы строго детерминированы:
-
-pending_validation
-
-Начальное состояние для любой вновь зарегистрированной серии или эндпоинта.
-
-Разрешённые переходы: в valid (при успешной live-проверке), в unavailable (при инфраструктурном отказе эндпоинта), в access_denied (при проблемах с авторизацией), в temporary_unavailable (при таймаутах/лимитах), в schema_mismatch (при расхождении схемы), в data_pending (в период grace period).
-
-valid
-
-Рабочее состояние, разрешающее использование данных в production (при условии выполнения требований License Gate).
-
-Разрешённые переходы:
-
-в temporary_unavailable (при временных сетевых ошибках или HTTP 429/503);
-
-в series_mapping_stale (при HTTP 404/410, удалении таблицы/вектора или изменении эндпоинта);
-
-в schema_mismatch (при изменении формата ответа API);
-
-в access_denied (при отзыве или истечении credentials);
-
-в release_late (если наступила ожидаемая дата релиза, но данные не поступили вовремя).
-
-temporary_unavailable
-
-Состояние временной блокировки из-за сетевых сбоев, таймаутов (validation_error_code = SOURCE_TIMEOUT) или превышения лимитов (validation_error_code = SOURCE_RATE_LIMITED), а также HTTP 500/503.
-
-Использование серии в расчётах заблокировано.
-
-Разрешённые переходы: обратно в valid (при следующем успешном опросе), в series_mapping_stale или unavailable, если временная ошибка переросла в постоянную.
-
-unavailable
-
-Постоянный инфраструктурный сбой (например, перманентный отказ хоста источника, удаление сервиса без редиректа).
-
-Триггер: Постоянная недоступность эндпоинта (фиксируется после исчерпания retry_policy).
-
-Разрешённые переходы: в valid (после исправления инфраструктуры и успешной перепроверки), в series_mapping_stale.
-
-access_denied
-
-Ошибка доступа к источнику данных.
-
-Триггер: Получение HTTP 401 Unauthorized, HTTP 403 Forbidden, или истечение срока действия API-ключа при запросе к защищённому эндпоинту.
-
-Разрешённые переходы: в valid только после обновления учетных данных и успешной повторной проверки.
-
-schema_mismatch
-
-Ошибка структуры данных.
-
-Триггер: HTTP 200 получен, но парсер не обнаружил обязательных ключей, колонок или векторов в ответе эндпоинта.
-
-Разрешённые переходы: в valid после обновления адаптера и успешной повторной проверки.
-
-series_mapping_stale
-
-Устаревшее или неверное сопоставление (например, несуществующий table_id в StatCan или series_id в Bank of Canada).
-
-Триггер: Получение HTTP 404, HTTP 410, либо явный сигнал об удалении/переименовании ряда со стороны источника.
-
-Использование в production строго заблокировано.
-
-Разрешённые переходы: в valid исключительно после исправления маппинга и успешной live-проверки.
-
-data_pending
-
-Ожидание данных в рамках льготного периода (grace period для новых серий).
-
-Триггер: Серия создана, базовая валидация пройдена, но время публикации по календарю ещё не наступило.
-
-Разрешённые переходы: в valid (при успешной первой загрузке), в missing_no_historical_data (если календарь истёк, а данных нет), в release_late, в temporary_unavailable.
-
-release_late
-
-Задержка публикации официального релиза.
-
-Триггер: expected_release_date уже прошла, но данные не поступили в систему в пределах допустимого допуска (tolerance window).
-
-Отличие от stale_mapping: Сам эндпоинт и маппинг живы и валидны, задерживается выпуск данных на стороне провайдера.
-
-Разрешённые переходы: в valid (как только данные поступают и проходят ingestion), в series_mapping_stale (если задержка сменяется удалением серии).
-
-missing_no_historical_data
-
-Отсутствие ретроспективных данных.
-
-Триггер: Попытка расчёта на дату винтажа, для которой у валидной серии физически нет ни одного наблюдения на или до винтажа.
-
-Разрешённые переходы: в valid после успешной загрузки исторического ряда.
+* expected, delayed, release_late, missing, revised.
+* actual_release_date имеет абсолютный приоритет над estimated_release_date.
+* Если официальная дата релиза отсутствует: estimated_release_date = ingestion_date, release_date_quality = fallback_to_ingestion, release_date_source = system_inferred.
 
 ## 4. SNAPSHOT DEDUPLICATION И REVISION SELECTION
 
-Все сохраняемые хеши (source_payload_hash, content_hash, raw_content_hash) ДОЛЖНЫ храниться как lowercase hexadecimal strings.
+Все сохраняемые хеши (source_payload_hash, raw_content_hash, content_hash) ДОЛЖНЫ храниться как lowercase hexadecimal strings.
 
-Разделение Хешей и Дедупликация (Snapshot Deduplication):
+Разделение хешей и дедупликация (Snapshot Deduplication):
 
 * source_payload_hash: hex string от сырого ответа API/CSV.
-* raw_content_hash: hex string от распарсенного сырого значения, даты и юнита (БЕЗ учёта номера ревизии). Используется для дедупликации в таблице data_observations.
+* raw_content_hash: hex string от распарсенного сырого значения, даты и юнита (БЕЗ учёта номера ревизии). Используется для дедупликации в таблице data_observations (уникальный индекс uq_obs_dedup).
 * content_hash: hex string от значения, даты, юнита, статуса И номера ревизии. Используется для трекинга версий в snapshot_observations и data_snapshots.
 
 Правила дедупликации:
 
 * Если source_payload_hash и content_hash совпадают с предыдущим снапшотом: is_duplicate = true. Новые data_observations не создаются.
-* Если revision_number изменился, но raw_content_hash (без учёта ревизии) тот же: создаётся data_revision_event (value_changed = false), новая data_observation НЕ создаётся. revision_number — это атрибут доступности на винтаж (snapshot_observations), а не канонической identity наблюдения (data_observations).
+* Если revision_number изменился, но raw_content_hash тот же: создаётся data_revision_event (value_changed = false), новая data_observation НЕ создаётся. revision_number — это атрибут доступности на винтаж (snapshot_observations), а не канонической identity наблюдения.
 * Если значение изменилось: создаётся новая data_observation, data_revision_event (value_changed = true), новый snapshot_observations.
-* Физическая дедупликация на уровне БД обеспечивается уникальным индексом uq_obs_dedup в таблице data_observations по полям (series_id, observation_date, raw_value, raw_content_hash).
 
 Выбор ревизий (Предотвращение Look-ahead bias):
-
 Исторический расчёт (backtest) использует только ревизии, физически доступные на vintage_date.
 
 1. Выбрать observation, где release_date <= vintage_date (с учётом правила разрешения actual vs estimated).
-2. Tie-breaking (если даты совпадают): Выбрать максимальный revision_number. Если revision_number отсутствует/равен, выбрать минимальный observation_id.
+2. Tie-breaking: Выбрать максимальный revision_number. Если revision_number отсутствует/равен, выбрать минимальный observation_id.
 3. Reproduction rule: Ранее сохранённый risk_score загружает строго связанные snapshot_observation_id, игнорируя новые данные.
 
 ## 5. ОПЕРАЦИОННЫЕ ГЕЙТЫ
@@ -199,18 +109,17 @@ BOOTSTRAP TIME WINDOW LOGIC
 
 * Day 0-2: Разрешено создание Admin, sources, endpoints. Запрещены ingestion и расчеты risk_score.
 * Day 3-7: Разрешены ingestion, validation, draft calculations. Production заблокирован.
-* Day 8-14+: Production разрешён ТОЛЬКО после утверждения первого production System Preset. Условия Preset: >= 5 valid series, >= 5 public_open, >= MINIMUM_AVAILABLE_INDICATORS доступных.
-Прохождение 14 дней само по себе НЕ включает production автоматически. Включает только approved preset. Risk Officer не имеет права override для pending_validation, unverified, requires_license, stale_mapping, или look-ahead bias.
+* Day 8-14+: Production разрешён ТОЛЬКО после утверждения первого production System Preset (>= 5 valid series, >= 5 public_open, >= MINIMUM_AVAILABLE_INDICATORS доступных).
+Прохождение 14 дней само по себе НЕ включает production автоматически. Risk Officer не имеет права override для pending_validation, unverified, requires_license, stale_mapping, или look-ahead bias.
 
 CONFIGURATION PUBLICATION GATE
-
 Переход конфигурации в status = published разрешён ТОЛЬКО если одновременно соблюдены условия:
 
 * Сумма original_weight всех индикаторов = 100.0000, все веса >= 0.0000.
 * Все thresholds валидны (very_low_min = 0.0000, severe_max = 100.0000, границы стыкуются).
 * Версия модели active.
-* Все индикаторы конфигурации (как required, так и optional) имеют статус validation_status = 'valid'. Любой другой статус любого индикатора блокирует публикацию.
-* Отсутствуют блокировки по лицензиям: все индикаторы имеют license_status = 'public_open' и production_allowed = true (как на уровне серии series.production_allowed, так и на уровне индикатора indicator_configs.production_allowed).
+* Все индикаторы конфигурации имеют статус validation_status = 'valid'. Любой другой статус блокирует публикацию.
+* Все индикаторы имеют license_status = 'public_open' и production_allowed = true.
 * Метаданные валидации свежие (последняя проверка не старше 30 дней).
 * Исполнитель имеет роль Admin или Risk Officer.
 Любое изменение published конфигурации строго создаёт новую версию.
@@ -220,14 +129,18 @@ ERROR MAPPING (TAXONOMY)
 * 0 доступных индикаторов: INSUFFICIENT_DATA (HTTP 422).
 * Покрытие < coverage_minimum: LOW_COVERAGE (HTTP 422).
 * Отсутствует required индикатор: REQUIRED_INDICATOR_MISSING (HTTP 422).
-* Источник timeout: SOURCE_TIMEOUT (HTTP 503).
-* Источник rate limited: SOURCE_RATE_LIMITED (HTTP 429).
-* Ошибка схемы: SOURCE_SCHEMA_MISMATCH (HTTP 502).
-* Временная недоступность: TEMPORARY_UNAVAILABLE (HTTP 503).
-* Источник 404/удален: STALE_MAPPING (HTTP 503).
+* Источник timeout: SOURCE_TIMEOUT (HTTP 503) — validation_status результирующего перехода: temporary_unavailable.
+* Источник rate limited: SOURCE_RATE_LIMITED (HTTP 429) — validation_status: temporary_unavailable.
+* Ошибка схемы: SOURCE_SCHEMA_MISMATCH (HTTP 502) — validation_status: schema_mismatch.
+* Временная недоступность (HTTP 500/503): TEMPORARY_UNAVAILABLE (HTTP 503) — validation_status: temporary_unavailable.
+* Источник 404/удален: STALE_MAPPING (HTTP 503) — validation_status: series_mapping_stale.
+* Отказ доступа/авторизации (HTTP 401/403): ACCESS_DENIED (HTTP 403) — validation_status: access_denied.
+* Постоянная инфраструктурная недоступность: SOURCE_UNAVAILABLE (HTTP 503) — validation_status: unavailable.
+* Задержка релиза сверх tolerance: RELEASE_LATE (HTTP 503) — validation_status: release_late (на уровне серии).
+* Нет исторических данных на запрошенную vintage_date: MISSING_HISTORICAL_DATA (HTTP 422) — отражается только в calculation_status конкретного результата.
 * Источник требует лицензии: LICENSE_REQUIRED (HTTP 403).
 * Лицензия не проверена: LICENSE_UNVERIFIED (HTTP 403).
-* Ошибка порогов (напр. H=L): INVALID_CONFIGURATION_THRESHOLDS (HTTP 422).
+* Ошибка порогов: INVALID_CONFIGURATION_THRESHOLDS (HTTP 422).
 * Нарушение детерминизма/XSS фраз: SCIENTIFIC_INTEGRITY_VIOLATION (HTTP 422).
 * Look-ahead bias обнаружен: LOOK_AHEAD_BIAS_BLOCKED (HTTP 422).
 * Потеря точности DECIMAL: DECIMAL_PRECISION_VIOLATION (HTTP 422).
@@ -236,7 +149,6 @@ ERROR MAPPING (TAXONOMY)
 ## 6. ИНТЕРФЕЙСЫ (API, CLI, UI)
 
 API ENDPOINTS (RESTful, JSON)
-
 Все API требуют проверки API Key/Session и конвертации входящих дат в UTC.
 
 * GET /api/v1/series: Роли: Все. Возвращает реестр индикаторов.
@@ -255,7 +167,6 @@ CLI COMMANDS
 * macrorisk:audit:export: Выгрузка логов аудита в CSV.
 
 UI / HTML
-
 Server-Rendered UI через Twig или Plates. Все графики обязаны визуально разделять Observed Data (сырые данные) и Model Output (расчётные скоры). Все пользовательские вводы текста проходят HTML Sanitization.
 
 COMPOSER LAYOUT
@@ -272,8 +183,7 @@ COMPOSER LAYOUT
 
 # ФАЙЛ 2. MATHEMATICAL CORE SPECIFICATION
 
-Версия: 1.7.0-FINAL
-
+Версия: 1.7.1-FINAL
 Статус: Mathematical Source of Truth
 
 ## 1. СИСТЕМНЫЕ И КАЛИБРОВОЧНЫЕ КОНСТАНТЫ (SYSTEM CONSTANTS)
@@ -296,7 +206,6 @@ COMPOSER LAYOUT
 * MINIMUM_AVAILABLE_INDICATORS: 3
 
 Калибровочные параметры (Calibration Parameters) для демографического расширения:
-
 (Default calibration values. Country-specific calibration may override them).
 
 * CALIBRATION_GAMMA_SCALE: 0.9543 (Компенсирует дискретность годового старения когорты)
@@ -311,40 +220,34 @@ COMPOSER LAYOUT
 ## 2. МАТЕМАТИЧЕСКАЯ ТОЧНОСТЬ (DECIMAL POLICY)
 
 Все расчёты выполняются с использованием BCMath.
-
 Глобальное правило: реализация обязана либо вызывать bcscale(SCALE) при инициализации контекста, либо явно передавать параметр scale = SCALE в каждый вызов функций bcadd, bcsub, bcmul, bcdiv.
-
 Любое использование функций floatval(), (float) при расчёте risk_score строго запрещено. Выбрасывается исключение FLOAT_USAGE_FORBIDDEN.
 
 ## 3. ТЕРМИНОЛОГИЯ И ОПРЕДЕЛЕНИЯ
 
-* **available (доступный):** Наблюдение физически существует на дату винтажа (vintage_date), удовлетворяет правилу временной последовательности (release_date <= vintage_date), имеет непустое значение (NOT NULL) и прошел первичный фильтр данных.
-* **eligible (пригодный для расчета):** Наблюдение одновременно удовлетворяет всем условиям:
-eligible := available AND (series.validation_status = 'valid') AND series.production_allowed AND indicator_configs.production_allowed AND (series.license_status = 'public_open')
+* available (доступный): Наблюдение физически существует на дату винтажа (vintage_date), удовлетворяет правилу временной последовательности (release_date <= vintage_date), имеет непустое значение (NOT NULL) и прошел первичный фильтр данных.
+* eligible (пригодный для расчета): Наблюдение одновременно удовлетворяет условиям: available AND (series.validation_status = 'valid') AND series.production_allowed AND indicator_configs.production_allowed AND (series.license_status = 'public_open').
 
 ## 4. ПОРЯДОК ВЫЧИСЛЕНИЙ (ORDER OF COMPUTATION)
 
 Детерминированный последовательный алгоритм:
 
-1. **Normalization (Нормализация):** Рассчитываются индивидуальные нормализованные баллы normalized_indicator_score ($s_i$) для ВСЕХ доступных индикаторов конфигурации (для обеспечения полного аудита в таблице результатов).
-2. **Coverage (Проверка покрытия):** Фильтруется подмножество $Eligible$. Рассчитывается coverage_ratio и проверяются минимальные пороги доступности. При провале — остановка с причиной insufficient_data или low_coverage.
-3. **Effective Weights (Эффективные веса):** На подмножестве $Eligible$ вычисляются базовые ренормализованные и дисконтированные веса ($w_{i, \text{eff\_raw}}$).
-4. **Rounding Reconciliation (Округление и примирение):** Веса округляются до STORAGE_SCALE и детерминированно сводятся к 100.0000%.
-5. **Indicator Contribution (Вклад индикаторов):** Рассчитываются физические вклады $c_i$ на подмножестве $Eligible$.
-6. **Category Score (Расчёт по категориям):** Вычисляются групповые баллы категорий и их взвешенные вклады.
-7. **Risk Score (Итоговый риск):** Суммируются вклады индикаторов в итоговый показатель risk_score.
-8. **Risk Band (Определение диапазона риска):** По итоговым баллам определяется итоговый диапазон риска.
+1. Normalization (Нормализация): Рассчитываются индивидуальные нормализованные баллы normalized_indicator_score (s_i) для ВСЕХ доступных индикаторов конфигурации.
+2. Coverage (Проверка покрытия): Фильтруется подмножество Eligible. Рассчитывается coverage_ratio и проверяются минимальные пороги доступности.
+3. Effective Weights (Эффективные веса): На подмножестве Eligible вычисляются базовые ренормализованные и дисконтированные веса.
+4. Rounding Reconciliation (Округление и примирение): Веса округляются до STORAGE_SCALE и детерминированно сводятся к 100.0000%.
+5. Indicator Contribution (Вклад индикаторов): Рассчитываются физические вклады c_i на подмножестве Eligible.
+6. Category Score (Расчёт по категориям): Вычисляются групповые баллы категорий и их взвешенные вклады.
+7. Risk Score (Итоговый риск): Суммируются вклады индикаторов в итоговый показатель risk_score.
+8. Risk Band (Определение диапазона риска): По итоговым баллам определяется итоговый диапазон риска.
 
 ## 5. ПОКРЫТИЕ (COVERAGE RATIO)
 
 Ограничения оригинального веса индикатора: 0.0000 <= original_weight <= 100.0000.
-
 Сумма всех original_weight в конфигурации строго равна 100.0000.
-
 Ограничения дисконта: 0.0000 < frequency_discount <= 1.0000. Violation MUST throw INVALID_CONFIGURATION_THRESHOLDS.
 
 Формула:
-
 coverage_ratio = Сумма(original_weight) для всех eligible indicators.
 
 Условия выполнения расчета risk_score:
@@ -357,15 +260,11 @@ coverage_ratio = Сумма(original_weight) для всех eligible indicators
 
 ## 6. СТРАТЕГИИ НОРМАЛИЗАЦИИ (THRESHOLD NORMALIZATION)
 
-Источник истины для логики нормализации — поле `direction_of_deterioration` (определяет higher_is_riskier, lower_is_riskier, distance_from_target_is_riskier, outside_band_is_riskier). Поле `normalization_method` для MVP всегда = 'threshold_linear'.
-
+Источник истины для логики нормализации — поле direction_of_deterioration. Поле normalization_method для MVP всегда = 'threshold_linear'.
 Пусть H = high_risk_threshold, L = low_risk_threshold, x = transformed_value.
 
-(Ограничение: Неприменимо, если x есть NaN/null — такие значения фильтруются до нормализации).
-
 Guard (Защита от деления на ноль):
-
-Если |H - L| < NORMALIZATION_EPSILON:
+Если абсолютная разница между H и L < NORMALIZATION_EPSILON:
 
 * Если x находится на "безопасной" стороне (x <= L для higher_is_riskier, x >= L для lower_is_riskier): score = 0.0000
 * Во всех остальных случаях: score = 100.0000
@@ -383,17 +282,13 @@ lower_is_riskier (H < L):
 * Иначе: score = ((L - x) / (L - H)) * 100.0000
 
 distance_from_target_is_riskier:
-
 Пусть T = target_value, M = max_deviation.
-
 Guard: Если M <= 0.00000000, выбрасывается INVALID_CONFIGURATION_THRESHOLDS.
 
-* score = MIN( 100.0000, (|x - T| / M) * 100.0000 )
+* score = минимальное из ( 100.0000, (|x - T| / M) * 100.0000 )
 
 outside_band_is_riskier:
-
 Требуются: safe_min, safe_max, outside_band_min_boundary, outside_band_max_boundary.
-
 Guard: outside_band_min_boundary < safe_min < safe_max < outside_band_max_boundary.
 
 * Если safe_min <= x <= safe_max: score = 0.0000
@@ -427,11 +322,9 @@ Rounding Reconciliation (Приведение округлений):
 ## 8. ИТОГОВЫЕ РАСЧЕТЫ RISK SCORE И КАТЕГОРИЙ
 
 Contribution индикатора:
-
 contribution_i = (normalized_score_i * reconciled_effective_weight_i) / 100.0000
 
 Итоговый риск:
-
 risk_score = Сумма(contribution_i) для всех eligible indicators.
 
 Если calculation_status = 'insufficient_data', risk_score = null, а calculation_hash рассчитывается от комбинации: config_hash + active_indicators_status_hash + model_version + vintage_date + calculation_status + 'INSUFFICIENT_DATA'.
@@ -448,7 +341,6 @@ Category Score (Расчет по категориям):
 ## 9. КЛАССИФИКАЦИЯ RISK BANDS И БЭКТЕСТИНГ (BACKTEST LOGIC)
 
 Инвариант: разбиение отрезка 0.0000 до 100.0000 должно быть непрерывным, без дыр и перекрытий (very_low_min = 0.0000, severe_max = 100.0000, low_min = very_low_max и т.д.).
-
 Интервалы полуоткрытые слева, закрытые справа (left-open, right-closed), кроме первого интервала:
 
 * very_low: risk_score >= very_low_min AND risk_score <= very_low_max
@@ -458,7 +350,6 @@ Category Score (Расчет по категориям):
 * severe: risk_score > severe_min AND risk_score <= severe_max
 
 Backtest Detection Rule:
-
 Эпизод считается detected, если внутри detection_window_before/after существует не менее minimum_persistence_periods расчетных точек, где:
 
 * risk_score >= detection_threshold_score, ИЛИ
@@ -476,11 +367,9 @@ Small Sample Warning:
 ## 10. ОПЦИОНАЛЬНОЕ РАСШИРЕНИЕ: ДЕМОГРАФИЧЕСКИЙ МЕТАБОЛИЗМ (ACMF)
 
 Демографическое расширение является ОПЦИОНАЛЬНЫМ (OUT OF SCOPE for v1.7 schema).
-
 Шаг времени t -> t+1 равен 1 ГОДУ. P1 = 0–14 лет (знаменатель 15), P2 = 15–64 лет (знаменатель 50), P3 = 65+ лет.
 
 Разделение режимов:
-
 OBSERVED MODE (Исторический анализ):
 
 * Births(t) является внешним наблюдаемым фактом (external input).
@@ -494,55 +383,37 @@ SIMULATION MODE (Моделирование):
 * Deaths_k(t) = mortality_rate_k(t) * P_k(t).
 
 Уравнения баланса (Guard: P_k >= 0):
-
 P1(t+1) = MAX(0, P1(t) + Births(t) - Aging12(t) - Deaths1(t) + Migration1(t))
-
 P2(t+1) = MAX(0, P2(t) + Aging12(t) - Aging23(t) - Deaths2(t) + Migration2(t) + LabourRetention(t))
-
 P3(t+1) = MAX(0, P3(t) + Aging23(t) - Deaths3(t) + Migration3(t))
 
 Потоки:
-
 Aging12(t) = CALIBRATION_GAMMA_SCALE * P1(t) / 15
-
 Aging23(t) = CALIBRATION_GAMMA_SCALE * P2(t) / 50
 
 Миграционный слой:
-
 IntlOther(t) = NetInternationalMigration(t) + OtherInternationalMigration(t)
-
 Migration1_raw(t) = MIGRATION_CHILD_SHARE * IntlOther(t) + IP_0_17(t)
-
 Migration2_raw(t) = MIGRATION_WORKING_SHARE * IntlOther(t) + IP_18_64(t)
-
 Migration3_raw(t) = MIGRATION_SENIOR_SHARE * IntlOther(t) + IP_65plus(t)
 
 Migration_k(t) = CALIBRATION_G10 * Migration_k_raw(t)
-
 LabourRetention(t) = LABOUR_RETENTION_SCALE * (CALIBRATION_G9 - 1) * P2(t)
 
 ---
 
 # ФАЙЛ 3. DATABASE SCHEMA CONTRACT
 
-Версия: 1.7.0-FINAL
-
+Версия: 1.7.1-FINAL
 СУБД: MySQL 8.4 LTS
-
 Engine: InnoDB
-
 Charset: utf8mb4
 
 ОБЩИЕ ПРАВИЛА:
-
 Все id: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY.
-
 Все timestamps: DATETIME(6). Все входящие даты должны быть нормализованы в UTC перед сохранением.
-
 Все economic values: DECIMAL(24,8).
-
-Все score-domain values: DECIMAL(10,4).
-
+All score-domain values: DECIMAL(10,4).
 Политика Append-Only применяется к таблице audit_records. Данные не подлежат физическому удалению (только soft delete для сущностей).
 
 РЕЕСТР REQUIRED INDEX MATRIX (PRODUCTION INDEXES)
@@ -562,7 +433,6 @@ Charset: utf8mb4
 * data_snapshots (series_id, vintage_date)
 
 ГРУППА 1: ИДЕНТИФИКАЦИЯ И ДОСТУП
-
 ТАБЛИЦА users
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -621,7 +491,6 @@ Charset: utf8mb4
 * FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 
 ГРУППА 2: ИСТОЧНИКИ ДАННЫХ
-
 ТАБЛИЦА data_sources
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -658,7 +527,7 @@ Charset: utf8mb4
 * timeout_seconds INT UNSIGNED NOT NULL DEFAULT 30
 * retry_policy_id BIGINT UNSIGNED NULL
 * production_allowed BOOLEAN NOT NULL DEFAULT FALSE
-* validation_status ENUM('pending_validation', 'valid', 'series_mapping_stale', 'unavailable', 'access_denied', 'temporary_unavailable', 'data_pending', 'schema_mismatch', 'source_timeout', 'source_rate_limited', 'release_late', 'missing_no_historical_data') NOT NULL DEFAULT 'pending_validation'
+* validation_status ENUM('pending_validation', 'valid', 'series_mapping_stale', 'unavailable', 'access_denied', 'temporary_unavailable', 'data_pending', 'schema_mismatch', 'release_late', 'missing_no_historical_data') NOT NULL DEFAULT 'pending_validation'
 * last_validated_at DATETIME(6) NULL
 * created_at DATETIME(6) NOT NULL
 * updated_at DATETIME(6) NOT NULL
@@ -667,7 +536,6 @@ Charset: utf8mb4
 * FOREIGN KEY (retry_policy_id) REFERENCES retry_policies(id) ON DELETE SET NULL
 
 ГРУППА 3: ИНДИКАТОРЫ И КАЛЕНДАРЬ
-
 ТАБЛИЦА series
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -691,7 +559,7 @@ Charset: utf8mb4
 * attribution_text TEXT NULL
 * license_status ENUM('public_open', 'public_open_candidate', 'requires_license', 'unverified') NOT NULL DEFAULT 'unverified'
 * production_allowed BOOLEAN NOT NULL DEFAULT FALSE
-* validation_status ENUM('pending_validation', 'valid', 'series_mapping_stale', 'unavailable', 'access_denied', 'temporary_unavailable', 'data_pending', 'schema_mismatch', 'source_timeout', 'source_rate_limited', 'release_late', 'missing_no_historical_data') NOT NULL DEFAULT 'pending_validation'
+* validation_status ENUM('pending_validation', 'valid', 'series_mapping_stale', 'unavailable', 'access_denied', 'temporary_unavailable', 'data_pending', 'schema_mismatch', 'release_late') NOT NULL DEFAULT 'pending_validation'
 * validation_checked_at DATETIME(6) NULL
 * created_at DATETIME(6) NOT NULL
 * updated_at DATETIME(6) NOT NULL
@@ -704,7 +572,7 @@ Charset: utf8mb4
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * series_id BIGINT UNSIGNED NOT NULL
 * validation_run_key VARCHAR(128) NOT NULL
-* validation_status ENUM('pending_validation', 'valid', 'series_mapping_stale', 'unavailable', 'access_denied', 'temporary_unavailable', 'data_pending', 'schema_mismatch', 'source_timeout', 'source_rate_limited', 'release_late', 'missing_no_historical_data') NOT NULL
+* validation_status ENUM('pending_validation', 'valid', 'series_mapping_stale', 'unavailable', 'access_denied', 'temporary_unavailable', 'data_pending', 'schema_mismatch', 'release_late') NOT NULL
 * validation_error_code VARCHAR(64) NULL
 * http_status_code INT NULL
 * endpoint_url VARCHAR(2048) NOT NULL
@@ -751,7 +619,6 @@ Charset: utf8mb4
 * FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
 
 ГРУППА 4: ВИНТАЖИ, SNAPSHOTS И НАБЛЮДЕНИЯ
-
 ТАБЛИЦА ingestion_runs
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -863,7 +730,6 @@ Charset: utf8mb4
 * FOREIGN KEY (release_calendar_id) REFERENCES release_calendars(id) ON DELETE SET NULL
 
 ГРУППА 5: КОНФИГУРАЦИИ
-
 ТАБЛИЦА model_versions
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -962,6 +828,8 @@ Charset: utf8mb4
 * production_allowed BOOLEAN NOT NULL DEFAULT TRUE
 * created_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_ind_conf (configuration_version_id, indicator_key)
+* CONSTRAINT chk_orig_weight CHECK (original_weight >= 0.0000)
+* CONSTRAINT chk_freq_discount CHECK (frequency_discount > 0.0000 AND frequency_discount <= 1.0000)
 * FOREIGN KEY (configuration_version_id) REFERENCES risk_configuration_versions(id) ON DELETE CASCADE
 * FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE RESTRICT
 
@@ -980,7 +848,6 @@ Charset: utf8mb4
 * FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE RESTRICT
 
 ГРУППА 6: РЕЗУЛЬТАТЫ И БЭКТЕСТЫ
-
 ТАБЛИЦА risk_score_results
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -999,6 +866,8 @@ Charset: utf8mb4
 * effective_weights_sum DECIMAL(10,4) NOT NULL
 * calculation_hash CHAR(64) NOT NULL
 * created_at DATETIME(6) NOT NULL
+* INDEX idx_cfg_vintage (configuration_version_id, vintage_date)
+* INDEX idx_vintage (vintage_date)
 * FOREIGN KEY (configuration_version_id) REFERENCES risk_configuration_versions(id) ON DELETE RESTRICT
 * FOREIGN KEY (model_version_id) REFERENCES model_versions(id) ON DELETE RESTRICT
 
@@ -1111,7 +980,6 @@ Charset: utf8mb4
 * FOREIGN KEY (risk_score_result_id) REFERENCES risk_score_results(id) ON DELETE CASCADE
 
 ГРУППА 7: NARRATIVES, JOBS И АУДИТ
-
 ТАБЛИЦА narrative_slots
 
 * id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
@@ -1213,14 +1081,12 @@ Charset: utf8mb4
 
 # ФАЙЛ 4. PHILOSOPHICAL AND SCIENTIFIC INTEGRITY FOUNDATION
 
-Версия: 1.7.0-FINAL
-
+Версия: 1.7.1-FINAL
 Статус: Philosophical Truth
 
 ## 1. ЭПИСТЕМОЛОГИЯ ОТКАЗА ОТ ИЛЛЮЗИИ ЗНАНИЯ
 
 Главный принцип системы: Система не должна притворяться, что знает то, чего не поддерживают данные.
-
 MacroRisk — это система детерминированной диагностики структурной устойчивости, а не механизм прогнозирования (forecasting). Риск-скор является исключительно модельной оценкой (model-derived estimate), полученной на основе конфигурации и явно заданных порогов, а не эмпирически наблюдаемым фактом экономики.
 
 ## 2. ПРИНЦИПЫ НАУЧНОЙ ЧЕСТНОСТИ В ТЕКСТАХ И ОТЧЁТАХ
@@ -1235,5 +1101,4 @@ MacroRisk — это система детерминированной диаг�
 ## 3. УРОК МАНИТОБЫ И ГРАНИЦЫ ИНТЕРПРЕТАЦИИ
 
 На основе демографического анализа Манитобы система выводит важнейший методологический концепт: видимая стабильность системы не означает её внутреннее благополучие. Стабильность когорты P2 обеспечивается внешней миграцией (migration replenishment), компенсирующей падение внутреннего естественного воспроизводства.
-
 Интерпретационные рамки (Boundaries): В отчётах запрещены публицистические или паникерские термины ("аппарат искусственного жизнеобеспечения", "крах системы"). Допустимая терминология: "The demographic extension suggests external-replenishment dependence under the configured assumptions." Модель разделяет внутренние механизмы удержания и внешние механизмы подпитки через прозрачные параметры калибровки.
