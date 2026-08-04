@@ -1,278 +1,421 @@
-MACRORISK MASTER SPECIFICATION: DETERMINISTIC SOURCE OF TRUTH
-Версия: 1.4.0-FINAL
-Дата: 2026-08-04
-Тип проекта: Новая самостоятельная система (Framework-independent)
-Основной язык: PHP 8.3+ (Laravel запрещён)
+ФАЙЛ 1. MASTER ARCHITECTURE AND TECHNICAL SPECIFICATION
+
+Версия: 1.5.0-FINAL
+Тип проекта: Новая самостоятельная система
+Язык: PHP 8.3+ (Framework-independent, Laravel запрещён)
 СУБД: MySQL 8.4 LTS InnoDB utf8mb4
 Локаль: en-CA (fr-CA в Phase 3)
-Статус: Implementation-Ready Source of Truth
+Статус: Implementation-Ready Deterministic Source of Truth
 
-ЧАСТЬ 1. АРХИТЕКТУРНЫЕ ПРИНЦИПЫ И НАУЧНАЯ ЧЕСТНОСТЬ
+1. АРХИТЕКТУРНЫЕ ПРИНЦИПЫ И ОГРАНИЧЕНИЯ
 
-1.1 ФУНДАМЕНТАЛЬНЫЕ АКСИОМЫ
+Система MacroRisk — это прозрачный, аудируемый и детерминированный механизм оценки макроэкономических рисков.
+Приоритеты: Корректность важнее количества функций. Прозрачность важнее автоматизации. Детерминизм важнее эвристик. Аудируемость важнее удобства.
 
-1. Correctness over feature count.
-2. Transparency over automation.
-3. Deterministic behavior over heuristics.
-4. Auditability over convenience.
-Обязательный принцип: Every production decision must be reproducible. Недетерминированные эвристики, случайная генерация и runtime-использование LLM для принятия решений или генерации отчётов строго запрещены. Нативный PHP float для расчётов весов и баллов запрещён (используется точная десятичная арифметика BCMath/Decimal Value Object).
+Обязательный принцип: Every production decision must be reproducible.
 
-1.2 SCIENTIFIC INTEGRITY GUARD
-Система обязана разделять Наблюдение (факт), Трансформацию (математика), Модельный результат (оценка) и Интерпретацию (текст).
-Перед выводом или сохранением любых текстовых отчётов (narrative slots) текст должен проходить:
-А) HTML Sanitization & Escaping для предотвращения XSS уязвимостей.
-Б) Scientific Integrity Guard — case-insensitive regex сканер запрещённых фраз.
-Список блокируемых фраз: will enter recession, proves that, confirms 80% recall, guarantees, predicts with confidence, recession is certain, model proves, statistically confirms (если выборка бэктеста < 10), caused by.
-При обнаружении фразы: публикация блокируется, возвращается ошибка SCIENTIFIC_INTEGRITY_VIOLATION, инцидент пишется в аудит.
+Запрещено использовать:
 
-ЧАСТЬ 2. ИСТОЧНИКИ ДАННЫХ И ЖИЗНЕННЫЙ ЦИКЛ
+* Laravel (миграции, Eloquent, queues, jobs, policies, helpers).
+* Runtime LLM для принятия решений или генерации production-текстов.
+* Заброшенные Composer-пакеты.
+* GPL-зависимости.
+* Неофициальные wrappers (PyPI, GitHub) для StatCan, Bank of Canada, CMHC, CREA, OSFI.
+* Нативный PHP float для расчётов весов и баллов.
 
-2.1 ОФИЦИАЛЬНЫЕ ИСТОЧНИКИ
-Кандидаты в источники: Statistics Canada (WDS & Full Table Download), Bank of Canada (Valet API), OSFI (Open Government Canada).
-Прямые источники CMHC и CREA запрещены как production default (используются StatCan-эквиваленты: NHPI, RPPI, Building Permits). Неофициальные обёртки (GitHub, PyPI) запрещены.
+2. ПРАВИЛА ОБРАБОТКИ ВРЕМЕНИ И ДАННЫХ
 
-2.2 SOURCE VALIDATION STATE MACHINE (МАТРИЦА ПЕРЕХОДОВ)
-Состояния: pending_validation, valid, series_mapping_stale, unavailable, access_denied, temporary_unavailable, data_pending, schema_mismatch, source_timeout, source_rate_limited, release_late, missing_no_historical_data.
+Все метки времени (timestamps), поступающие в систему из внешних источников, пользовательского ввода или системных событий, ОБЯЗАТЕЛЬНО должны конвертироваться в таймзону TIMEZONE (UTC) до сохранения в базу данных.
+Для хранения используется формат DATETIME(6) для обеспечения микросекундной точности, необходимой для дедупликации и предотвращения состояния гонки (race conditions).
 
-Переходы:
+3. ИСТОЧНИКИ ДАННЫХ И ЖИЗНЕННЫЙ ЦИКЛ
 
-* pending_validation -> valid: ИСКЛЮЧИТЕЛЬНО после успешной live validation (HTTP 200, схема совпадает, частота подтверждена). Risk Officer не может установить "valid" вручную без проверки.
-* valid -> temporary_unavailable: HTTP 500/503/timeout. Не делает маппинг "stale".
-* valid -> source_rate_limited: HTTP 429.
-* valid -> schema_mismatch: HTTP 200, но ожидаемые поля исчезли.
-* valid -> series_mapping_stale: HTTP 404, таблица/вектор удалены, API deprecation. Production use блокируется. Возврат в "valid" только после успешной новой проверки.
-* pending_validation -> data_pending: Для новых серий в grace period (схема верна, но время релиза ещё не наступило). В production использовать нельзя.
+Официальные источники-кандидаты: Statistics Canada (WDS, Full Table Download), Bank of Canada (Valet API), OSFI.
+Прямые источники CMHC и CREA запрещены как production default (используются эквиваленты StatCan).
 
-2.3 LICENSE GATE STATE MACHINE
-Состояния: unverified, requires_license, public_open_candidate, public_open.
-Переходы:
+SOURCE VALIDATION STATE MACHINE
 
-* unverified -> public_open_candidate: Источник выглядит публичным, но terms of use ещё не проверены Risk Officer'ом.
-* public_open_candidate -> public_open: ТОЛЬКО после задокументированного review (Admin или Risk Officer).
-* public_open_candidate -> requires_license: При обнаружении платной подписки или ограничений.
-* public_open -> unverified: При истечении срока review или изменении terms of use.
-Индикатор production-eligible ТОЛЬКО при license_status = public_open.
+* pending_validation: Начальное состояние.
+* valid: Переход из pending_validation или temporary_unavailable ИСКЛЮЧИТЕЛЬНО после успешной проверки (HTTP 200, схема верна, частота подтверждена). Risk Officer не может установить valid вручную без проверки.
+* temporary_unavailable: HTTP 500, 503, timeout. Маппинг остаётся валидным.
+* source_rate_limited: HTTP 429.
+* schema_mismatch: HTTP 200, но ожидаемые поля отсутствуют.
+* series_mapping_stale: HTTP 404, таблица/вектор удалены, API deprecation. Production use блокируется. Возврат в valid только после успешной новой проверки.
+* data_pending: Для новых серий в grace period (схема верна, время релиза ещё не наступило). Production use запрещён.
 
-2.4 RELEASE CALENDAR RULES
-Состояния: expected, released, delayed, missing, revised, unknown.
-Производные статусы для серии: release_late, fallback_to_ingestion, historical_estimate.
-Правила:
+LICENSE GATE STATE MACHINE
 
-* Если expected_release_date наступила, а данных нет -> delayed.
-* Если delay превышает tolerance -> серия получает validation_status = release_late.
-* Если данные нужны для production, а official release date отсутствует -> estimated_release_date = ingestion_date, release_date_quality = fallback_to_ingestion.
-* Наличие Release Calendar (или утверждённой fallback-политики) обязательно для production eligibility.
+* unverified: Начальное состояние.
+* public_open_candidate: Источник выглядит публичным, terms of use не проверены.
+* public_open: ТОЛЬКО после задокументированного review (Admin или Risk Officer).
+* requires_license: При обнаружении платной подписки или ограничений.
+Только series со статусом public_open являются production-eligible.
 
-ЧАСТЬ 3. VINTAGE, SNAPSHOTS И ДЕДУПЛИКАЦИЯ
+RELEASE CALENDAR RULES
+Каждая серия должна иметь записи в Release Calendar для production-использования.
 
-3.1 SNAPSHOT DEDUPLICATION RULES
+* expected: Дата релиза в будущем.
+* delayed: expected_release_date наступила, данных нет.
+* release_late: delay превышает tolerance.
+* missing: источник подтверждает отсутствие релиза.
+* revised: релиз относится к прошлому периоду.
+* Разрешение конфликта release_date: Если для наблюдения существуют и actual_release_date, и estimated_release_date, система ОБЯЗАНА использовать actual_release_date.
+* Если данные нужны для production, а official release date отсутствует: estimated_release_date = ingestion_date, release_date_quality = fallback_to_ingestion.
 
-* source_payload_hash = SHA-256(сырой ответ API/CSV).
-* content_hash = SHA-256(распарсенное значение, дата, юнит, статус, номер ревизии).
-Правила дедупликации:
-* Если source_payload_hash и content_hash совпадают с предыдущим снапшотом -> is_duplicate = true. Новые data_observations не создаются.
-* Если revision_number изменился, но само value и content_hash без учёта ревизии те же -> создаётся data_revision_event (value_changed = false), новая data_observation НЕ создаётся.
-* Если value изменилось -> создаётся новая data_observation, data_revision_event (value_changed = true), новый snapshot_observations.
+4. SNAPSHOT DEDUPLICATION И REVISION SELECTION
 
-3.2 REVISION SELECTION LOGIC (ПРЕДОТВРАЩЕНИЕ LOOK-AHEAD BIAS)
-Исторический расчёт (backtest) или воспроизведение обязаны использовать только те ревизии, которые были физически доступны на historical vintage_date.
-Правило выбора:
+Дедупликация (Snapshot Deduplication):
 
-1. Выбрать observation, где release_date <= vintage_date (или estimated_release_date <= vintage_date).
-2. Tie-breaking (если несколько ревизий имеют одинаковую release_date): Выбрать максимальный revision_number. Если revision_number отсутствует/равен, выбрать минимальный observation_id.
-3. Reproduction rule: При запросе ранее сохранённого скора система загружает строго связанные snapshot_observation_id, игнорируя любые новые данные.
+* source_payload_hash: HASH_ALGORITHM hex string от сырого ответа API/CSV.
+* content_hash: HASH_ALGORITHM hex string от распарсенного значения, даты, юнита, статуса, номера ревизии.
+* Если оба хеша совпадают с предыдущим снапшотом: is_duplicate = true. Новые data_observations не создаются.
+* Если revision_number изменился, но content_hash без учёта ревизии тот же: создаётся data_revision_event (value_changed = false), новая data_observation НЕ создаётся.
+* Если значение изменилось: создаётся новая data_observation, data_revision_event (value_changed = true), новый snapshot_observations. Уникальность в snapshot_observations строго по комбинации: snapshot_id + series_id + observation_id.
 
-ЧАСТЬ 4. MATHEMATICAL RISK ENGINE CORE
+Выбор ревизий (Предотвращение Look-ahead bias):
+Исторический расчёт (backtest) использует только ревизии, физически доступные на vintage_date.
 
-4.1 ВЕСА И ПОКРЫТИЕ (COVERAGE)
-Все сконфигурированные оригинальные веса (original_weight) в сумме строго равны 100.0000.
-coverage_ratio = СУММА(original_weight доступных и eligible индикаторов). frequency_discount НЕ влияет на coverage_ratio.
-Расчёт возможен, если: coverage_ratio >= 60.0000, минимум 3 индикатора, все required индикаторы доступны.
+1. Выбрать observation, где release_date <= vintage_date (с учётом правила разрешения actual vs estimated).
+2. Tie-breaking (если даты совпадают): Выбрать максимальный revision_number. Если revision_number отсутствует/равен, выбрать минимальный observation_id.
+3. Reproduction rule: Ранее сохранённый risk_score загружает строго связанные snapshot_observation_id, игнорируя новые данные.
+4. ОПЕРАЦИОННЫЕ ГЕЙТЫ
 
-4.2 СТРАТЕГИИ НОРМАЛИЗАЦИЯ (NORMALIZATION ENGINE)
-Для защиты от деления на ноль используется эпсилон = 0.00000001.
+BOOTSTRAP TIME WINDOW LOGIC
 
-А) threshold_linear (higher_is_riskier): H > L.
-Guard: Если |H - L| < эпсилон: score = 0.0000 (если x <= L), иначе 100.0000.
-Иначе: x <= L -> 0.0000; x >= H -> 100.0000; внутри -> ((x - L) / (H - L)) * 100.0000.
+* Day 0-2: Разрешено создание Admin, sources, endpoints. Запрещены ingestion и расчеты risk_score.
+* Day 3-7: Разрешены ingestion, validation, draft calculations. Production заблокирован.
+* Day 8-14+: Production разрешён ТОЛЬКО после утверждения первого production System Preset. Условия Preset: >= 5 valid series, >= 5 public_open, >= 3 доступных.
+Прохождение 14 дней само по себе НЕ включает production автоматически. Включает только approved preset. Risk Officer не имеет права override для pending_validation, unverified, requires_license, stale_mapping.
 
-Б) threshold_linear (lower_is_riskier): H < L.
-Guard: Если |H - L| < эпсилон: score = 0.0000 (если x >= L), иначе 100.0000.
-Иначе: x >= L -> 0.0000; x <= H -> 100.0000; внутри -> ((L - x) / (L - H)) * 100.0000.
+CONFIGURATION PUBLICATION GATE
+Переход конфигурации в status = published разрешён ТОЛЬКО если:
 
-В) distance_from_target_is_riskier:
-Guard: M <= 0 -> INVALID_CONFIGURATION_THRESHOLDS.
-Иначе: score = MIN(100.0000, (|x - T| / M) * 100.0000).
-
-Г) outside_band_is_riskier:
-Требуются: safe_min, safe_max, outside_band_min_boundary, outside_band_max_boundary.
-Guard: outside_band_min_boundary < safe_min < safe_max < outside_band_max_boundary. (Иначе ошибка).
-Если safe_min <= x <= safe_max -> 0.0000.
-Если x <= outside_band_min_boundary или x >= outside_band_max_boundary -> 100.0000.
-Интерполяция применяется на отрезках между outside_band и safe границами.
-
-4.3 РАСЧЁТ ЭФФЕКТИВНЫХ ВЕСОВ И ROUNDING RECONCILIATION
-
-1. Внутренние расчёты выполняются со scale = 8.
-2. w_base_i = original_weight_i / СУММА(original_weight доступных) * 100
-3. w_disc_i = w_base_i * frequency_discount_i
-4. effective_weight_i_raw = w_disc_i / СУММА(w_disc доступных) * 100
-5. Rounding Reconciliation: Каждое effective_weight округляется до DECIMAL(10,4).
-6. Рассчитывается delta = 100.0000 - СУММА(округлённых effective_weights).
-7. Delta детерминированно прибавляется к ОДНОМУ индикатору. Критерий выбора: максимальный original_weight -> (при равенстве) максимальный w_disc -> (при равенстве) алфавитный порядок indicator_key по возрастанию.
-8. Contribution = (normalized_score * reconciled_effective_weight) / 100.0000.
-9. Total Risk Score = СУММА(Contribution).
-
-4.4 РАСЧЁТ КАТЕГОРИЙ (CATEGORY SCORE)
-Для каждой категории (например, inflation, labour_market):
-
-* Множество A_c = доступные индикаторы в категории. Если пусто -> category_score = null.
-* Локальная нормализация: cat_weight_i = reconciled_effective_weight_i / СУММА(reconciled_effective_weight внутри A_c) * 100.0000.
-* category_score = СУММА(normalized_score_i * cat_weight_i / 100.0000).
-* category_contribution (вклад категории в общий скор) = category_score * СУММА(original_weight внутри A_c) / 100.0000.
-
-ЧАСТЬ 5. ОПЕРАЦИОННЫЕ ГЕЙТЫ И ERROR TAXONOMY
-
-5.1 BOOTSTRAP TIME WINDOW LOGIC
-Запуск production-расчётов блокируется таймером и статусами.
-
-* Day 0–2: Разрешено создание Admin, sources, endpoints, audit. Запрещены ingestion и любой score.
-* Day 3–7: Разрешены ingestion, validation, draft calculations. Production заблокирован.
-* Day 8–14+: Production разрешён ТОЛЬКО после утверждения первого production System Preset (требует >= 5 valid series, >= 5 public_open, >= 3 доступных).
-Прохождение 14 дней само по себе НЕ включает production. Включает только approved preset. Risk Officer не имеет права override для pending_validation, unverified/requires_license, stale_mapping.
-
-5.2 CONFIGURATION PUBLICATION GATE
-Переход конфигурации в status = 'published' (и is_published = true) разрешён ТОЛЬКО если:
-
-* Сумма original_weight = 100.0000, все веса >= 0.
-* Все thresholds валидны (включая guards).
+* Сумма original_weight = 100.0000, все веса >= 0.0000.
+* Все thresholds валидны.
 * Версия модели active.
-* Все required индикаторы production_eligible (valid + public_open).
-* Нет pending_validation, public_open_candidate, requires_license, unverified, access_denied, temporary_unavailable, stale_mapping.
-* Метаданные валидации источника свежие (не старше лимита).
+* Все required индикаторы production-eligible.
+* Отсутствуют: pending_validation, public_open_candidate, requires_license, unverified, access_denied, temporary_unavailable, stale_mapping.
+* Метаданные валидации свежие.
 * Исполнитель имеет роль Admin или Risk Officer.
 Любое изменение published конфигурации строго создаёт новую версию.
 
-5.3 ERROR MAPPING (TAXONOMY)
-Каждая ошибка возвращает стандартизированный ответ.
+ERROR MAPPING (TAXONOMY)
 
-* 0 доступных индикаторов -> INSUFFICIENT_DATA (HTTP 422, Calculation: insufficient_data, Hint: Проверить даты винтажа).
-* Покрытие < 60% -> LOW_COVERAGE (HTTP 422, Calculation: low_coverage).
-* Отсутствует required индикатор -> REQUIRED_INDICATOR_MISSING (HTTP 422, Calculation: insufficient_data).
-* Источник 404/схема изменена -> STALE_MAPPING (HTTP 503, Hint: Обновить endpoint).
-* Источник требует лицензии -> LICENSE_REQUIRED (HTTP 403).
-* Лицензия не проверена -> LICENSE_UNVERIFIED (HTTP 403).
-* Ошибка порогов (напр. H=L) -> INVALID_CONFIGURATION_THRESHOLDS (HTTP 422).
-* Нативный float обнаружен в Risk Engine -> FLOAT_USAGE_FORBIDDEN (HTTP 500/422, Hint: Переписать на Decimal).
+* 0 доступных индикаторов: INSUFFICIENT_DATA (HTTP 422, Hint: Проверить даты винтажа).
+* Покрытие < MINIMUM_COVERAGE_REQUIRED: LOW_COVERAGE (HTTP 422).
+* Отсутствует required индикатор: REQUIRED_INDICATOR_MISSING (HTTP 422).
+* Источник 404/схема изменена: STALE_MAPPING (HTTP 503).
+* Источник требует лицензии: LICENSE_REQUIRED (HTTP 403).
+* Лицензия не проверена: LICENSE_UNVERIFIED (HTTP 403).
+* Ошибка порогов: INVALID_CONFIGURATION_THRESHOLDS (HTTP 422).
+* Нативный float обнаружен: FLOAT_USAGE_FORBIDDEN (HTTP 500/422).
 
-ЧАСТЬ 6. ИНТЕРФЕЙСЫ (API, CLI, NARRATIVES)
+6. ИНТЕРФЕЙСЫ (API, CLI, UI)
 
-6.1 API ENDPOINTS
-Все API требуют проверки API Key/Session.
+API ENDPOINTS (RESTful, JSON)
+Все API требуют проверки API Key/Session и конвертации входящих дат в UTC.
 
-* GET /api/v1/series: Роли (Все). Возвращает реестр.
-* POST /api/v1/series/{id}/validate: Роли (Admin, Risk Officer). Запускает синхронную SourceValidationStateMachine. Возвращает новый validation_status.
-* GET /api/v1/configurations: Роли (Все). Возвращает список опубликованных и доступных draft.
-* POST /api/v1/calculations/production: Роли (Admin, Risk Officer). Payload: {config_version, vintage_date}. Возвращает RiskScoreResult, indicator_contributions, warnings. Если bootstrap не пройден -> HTTP 422.
-* GET /api/v1/situation-room: Роли (Viewer и выше). Только published production data. Без experimental.
-* POST /api/v1/backtests: Роли (Analyst, Risk Officer). Rate limit: 5/час. Запускает job.
+* GET /api/v1/series: Роли: Все. Возвращает реестр индикаторов.
+* POST /api/v1/series/{id}/validate: Роли: Admin, Risk Officer. Запускает SourceValidationStateMachine.
+* GET /api/v1/configurations: Роли: Все.
+* POST /api/v1/calculations/production: Роли: Admin, Risk Officer. Payload: config_version, vintage_date. Возвращает RiskScoreResult.
+* GET /api/v1/situation-room: Роли: Viewer и выше. Только published production data.
+* POST /api/v1/backtests: Роли: Analyst, Risk Officer. Rate limit: 5/час.
 
-6.2 CLI COMMANDS
+CLI COMMANDS
 
-* macrorisk:schema:install: Запускает DDL миграции (Phinx). Не создаёт пользователей.
-* macrorisk:admin:create: Создаёт первого Admin. Интерактивный ввод email/password. Идемпотентна. Создаёт запись в audit.
-* macrorisk:ingest:run: Запуск загрузки. Идемпотентна. Использует file-based locks для предотвращения race conditions. Пишет в ingestion_runs.
-* macrorisk:validate:sources: Массовая проверка.
-* macrorisk:audit:export: Выгрузка аудита.
+* macrorisk:schema:install: Запускает DDL миграции (Phinx).
+* macrorisk:admin:create: Создаёт первого Admin. Разрешена только если Admin не существует. Интерактивный ввод email/password. Идемпотентна. Пишет в аудит.
+* macrorisk:ingest:run: Запуск загрузки. Идемпотентна. File-based locks/concurrency controls.
+* macrorisk:validate:sources: Массовая проверка endpoints.
+* macrorisk:audit:export: Выгрузка логов аудита в CSV.
 
-6.3 NARRATIVE DETERMINISTIC SELECTION
-Генерация текстов (Narrative Reports) не использует LLM.
+UI / HTML
+Server-Rendered UI через Twig или Plates. Все графики обязаны визуально разделять Observed Data (сырые данные) и Model Output (расчётные скоры). Все пользовательские вводы текста проходят HTML Sanitization.
 
-* Seed Hash = SHA-256(config_version + vintage_date + locale + risk_band + active_indicators_status_hash).
-* Seed Integer = derived from first 8 bytes of Seed Hash.
-* Алгоритм: Собирает все eligible narrative_slots (status=approved, scientific_integrity_status=passed). Сортирует по slot_key, version_number. Детерминированно выбирает конкретный текст на основе Seed Integer. Гарантируется 100% повторяемость отчёта при тех же исходных данных.
+COMPOSER LAYOUT
 
-ЧАСТЬ 7. ОПЦИОНАЛЬНОЕ РАСШИРЕНИЕ: ACMF DEMOGRAPHIC EXTENSION
+* /src/Domain: Сущности, Value Objects (Math Decimal), Interfaces, Invariants, Constants.
+* /src/Application: Use Cases, State Machines, RiskEngine.
+* /src/Infrastructure: Репозитории (PDO/DBAL), HTTP Клиенты, Адаптеры (StatCanClient).
+* /src/Api: PSR-15 Middlewares, Slim Framework Controllers.
+* /src/Cli: Symfony Console команды.
+* /src/Ui: Контроллеры и шаблоны.
+* /tests: PHPUnit/Pest тесты.
 
-Демографическое ядро не является частью обязательного Risk Engine MVP. Оно не влияет напрямую на risk_score, если его индикаторы явно не добавлены в конфигурацию с соответствующими весами.
-В UI и отчётах язык должен быть предельно осторожным: "The demographic extension suggests external-replenishment dependence under the configured assumptions" (запрещено писать "System is on life support").
+=============================================================================
 
-Уравнения баланса когорт (шаг = 1 год):
+ФАЙЛ 2. MATHEMATICAL CORE SPECIFICATION
+
+Версия: 1.5.0-FINAL
+Статус: Mathematical Source of Truth
+
+1. СИСТЕМНЫЕ И КАЛИБРОВОЧНЫЕ КОНСТАНТЫ (SYSTEM CONSTANTS)
+
+Реализация должна использовать строго именованные константы.
+
+Базовые системные константы:
+
+* HASH_ALGORITHM: SHA-256
+* HASH_FORMAT: hex string
+* TIMEZONE: UTC
+* SEED_ENDIANNESS: BIG_ENDIAN
+* SCALE: 8 (Внутренняя точность вычислений BCMath)
+* STORAGE_SCALE: 4 (Точность сохранения в БД DECIMAL 10,4)
+* NORMALIZATION_EPSILON: 1e-8 (Guard-порог защиты от деления на ноль)
+
+Бизнес-константы (Business Rules):
+
+* MINIMUM_COVERAGE_REQUIRED: 60.0000
+* MINIMUM_AVAILABLE_INDICATORS: 3
+
+Калибровочные параметры (Calibration Parameters) для демографического расширения:
+
+* GAMMA_SCALE: 0.9543 (Компенсирует дискретность годового старения когорты)
+* g9: 1.0000 (Residual internal retention effect, default)
+* g10: 1.0000 (Migration replenishment scale, default)
+* LABOUR_RETENTION_SCALE: 0.0015 (Базовая размерность остаточного удержания рынка труда)
+* MIGRATION_CHILD_SHARE: 0.15 (Доля детей в международной миграции)
+* MIGRATION_WORKING_SHARE: 0.80 (Доля трудоспособного возраста в миграции)
+* MIGRATION_SENIOR_SHARE: 0.05 (Доля пожилых в миграции)
+
+2. МАТЕМАТИЧЕСКАЯ ТОЧНОСТЬ (DECIMAL POLICY)
+Все расчёты выполняются с использованием BCMath.
+Глобальное правило: реализация обязана либо вызывать bcscale(SCALE) при инициализации контекста, либо явно передавать параметр scale = SCALE в каждый вызов функций bcadd, bcsub, bcmul, bcdiv.
+Любое использование функций floatval(), (float) при расчёте risk_score строго запрещено.
+3. ТЕРМИНОЛОГИЯ: ELIGIBLE INDICATORS
+Термин "eligible" имеет строгое математическое и системное определение:
+eligible := available AND valid AND production_allowed
+4. ПОКРЫТИЕ (COVERAGE RATIO)
+Ограничения оригинального веса индикатора: 0.0000 <= original_weight <= 100.0000.
+Сумма всех original_weight в конфигурации строго равна 100.0000.
+
+Формула:
+coverage_ratio = Сумма(original_weight) для всех eligible indicators.
+
+Условия выполнения расчета risk_score:
+
+* coverage_ratio >= MINIMUM_COVERAGE_REQUIRED
+* Количество eligible indicators >= MINIMUM_AVAILABLE_INDICATORS
+* Все индикаторы с флагом is_required = true являются eligible.
+
+5. ЭФФЕКТИВНЫЕ ВЕСА И ROUNDING RECONCILIATION
+Ограничения дисконта: 0.0000 < frequency_discount <= 1.0000.
+
+Шаги расчета:
+
+* w_base_i = (original_weight_i / coverage_ratio) * 100.0000
+* w_disc_i = w_base_i * frequency_discount_i
+* effective_weight_i_raw = (w_disc_i / Сумма(w_disc всех eligible indicators)) * 100.0000
+
+Rounding Reconciliation (Приведение округлений):
+
+* Каждое effective_weight_i_raw округляется до STORAGE_SCALE (4 знака).
+* Рассчитывается delta = 100.0000 - Сумма(округленных effective_weights).
+* GUARD ПРАВИЛО: Если delta == 0.0000, no reconciliation performed.
+* Если delta != 0.0000, delta детерминированно прибавляется к ОДНОМУ индикатору.
+* Критерий выбора индикатора для прибавления delta:
+1. Максимальный original_weight.
+2. При равенстве: максимальный w_disc.
+3. При равенстве: алфавитный порядок indicator_key по возрастанию.
+
+
+
+6. СТРАТЕГИИ НОРМАЛИЗАЦИИ (THRESHOLD NORMALIZATION)
+Пусть H = high_risk_threshold, L = low_risk_threshold, x = transformed_value.
+
+Guard (Защита от деления на ноль):
+Если |H - L| < NORMALIZATION_EPSILON:
+
+* Если x находится на "безопасной" стороне (x <= L для higher_is_riskier, x >= L для lower_is_riskier): score = 0.0000
+* Во всех остальных случаях: score = 100.0000
+
+higher_is_riskier (H > L):
+
+* Если x <= L: score = 0.0000
+* Если x >= H: score = 100.0000
+* Иначе: score = ((x - L) / (H - L)) * 100.0000
+
+lower_is_riskier (H < L):
+
+* Если x >= L: score = 0.0000
+* Если x <= H: score = 100.0000
+* Иначе: score = ((L - x) / (L - H)) * 100.0000
+
+distance_from_target_is_riskier:
+Пусть T = target_value, M = max_deviation.
+Guard: Если M <= 0, выбрасывается INVALID_CONFIGURATION_THRESHOLDS.
+
+* score = MIN( 100.0000, (|x - T| / M) * 100.0000 )
+
+outside_band_is_riskier:
+Требуются: safe_min, safe_max, outside_band_min_boundary, outside_band_max_boundary.
+Guard: outside_band_min_boundary < safe_min < safe_max < outside_band_max_boundary.
+
+* Если safe_min <= x <= safe_max: score = 0.0000
+* Если x <= outside_band_min_boundary ИЛИ x >= outside_band_max_boundary: score = 100.0000
+* Левая интерполяция (outside_band_min_boundary < x < safe_min):
+score = 100.0000 * (safe_min - x) / (safe_min - outside_band_min_boundary)
+* Правая интерполяция (safe_max < x < outside_band_max_boundary):
+score = 100.0000 * (x - safe_max) / (outside_band_max_boundary - safe_max)
+
+7. ИТОГОВЫЕ РАСЧЕТЫ RISK SCORE И КАТЕГОРИЙ
+Contribution индикатора:
+contribution_i = (normalized_score_i * reconciled_effective_weight_i) / 100.0000
+
+Итоговый риск:
+risk_score = Сумма(contribution_i) для всех eligible indicators.
+
+Category Score (Расчет по категориям):
+
+* Для категории С, собирается множество A_c (eligible indicators в этой категории).
+* Если A_c пусто, category_score = null.
+* Сумма_весов_категории = Сумма(reconciled_effective_weight_i) для i в A_c.
+* cat_weight_i = (reconciled_effective_weight_i / Сумма_весов_категории) * 100.0000.
+* category_score = Сумма(normalized_score_i * cat_weight_i) / 100.0000.
+* category_contribution = category_score * Сумма(original_weight_i для i в A_c) / 100.0000.
+
+8. КЛАССИФИКАЦИЯ RISK BANDS
+Назначение risk_band происходит путем строгого сравнения risk_score с диапазонами (хранящимися в risk_band_threshold_sets).
+
+* very_low: risk_score >= very_low_min AND risk_score <= very_low_max
+* low: risk_score > low_min AND risk_score <= low_max
+* moderate: risk_score > moderate_min AND risk_score <= moderate_max
+* high: risk_score > high_min AND risk_score <= high_max
+* severe: risk_score > severe_min AND risk_score <= severe_max
+
+9. БЭКТЕСТИНГ (BACKTEST LOGIC)
+
+* small_sample_warning вычисляется в конце прогона (на основе таблицы historical_episodes):
+Если sample_size_n < 10, small_sample_warning = true.
+Если sample_size_n >= 10, small_sample_warning = false.
+До завершения расчета поле имеет значение NULL или FALSE.
+
+10. ОПЦИОНАЛЬНОЕ РАСШИРЕНИЕ: ДЕМОГРАФИЧЕСКИЙ МЕТАБОЛИЗМ (ACMF)
+Шаг времени t -> t+1 равен 1 ГОДУ.
+
+Разделение режимов:
+OBSERVED MODE (Исторический анализ):
+
+* Births(t) является внешним наблюдаемым фактом (external input).
+* Deaths_k(t) является внешним наблюдаемым фактом.
+
+SIMULATION MODE (Моделирование):
+
+* fertility_rate(t) определяется как annual_births_per_working_age_person.
+* Births(t) = fertility_rate(t) * P2(t).
+* mortality_rate_k(t) определяется как annual_mortality_probability.
+* Deaths_k(t) = mortality_rate_k(t) * P_k(t).
+
+Уравнения баланса:
 P1(t+1) = MAX(0, P1(t) + Births(t) - Aging12(t) - Deaths1(t) + Migration1(t))
 P2(t+1) = MAX(0, P2(t) + Aging12(t) - Aging23(t) - Deaths2(t) + Migration2(t) + LabourRetention(t))
 P3(t+1) = MAX(0, P3(t) + Aging23(t) - Deaths3(t) + Migration3(t))
 
 Потоки:
-Aging12(t) = gamma_scale * P1(t) / 15
-Aging23(t) = gamma_scale * P2(t) / 50
+Aging12(t) = GAMMA_SCALE * P1(t) / 15
+Aging23(t) = GAMMA_SCALE * P2(t) / 50
+
+Миграционный слой:
 IntlOther(t) = NetInternationalMigration(t) + OtherInternationalMigration(t)
-Migration2_raw(t) = 0.80 * IntlOther(t) + IP_18_64(t)
-Migration2(t) = g10 * Migration2_raw(t)
-LabourRetention(t) = 0.0015 * (g9 - 1) * P2(t)
-(Здесь g10 и g9 — калибровочные residual-коэффициенты, демонстрирующие в рамках модели зависимость когорты P2 от внешней миграции).
+Migration1_raw(t) = MIGRATION_CHILD_SHARE * IntlOther(t) + IP_0_17(t)
+Migration2_raw(t) = MIGRATION_WORKING_SHARE * IntlOther(t) + IP_18_64(t)
+Migration3_raw(t) = MIGRATION_SENIOR_SHARE * IntlOther(t) + IP_65plus(t)
 
-ЧАСТЬ 8. FULL DDL CONTRACT & FOREIGN KEY MATRIX
+Migration_k(t) = g10 * Migration_k_raw(t)
+LabourRetention(t) = LABOUR_RETENTION_SCALE * (g9 - 1) * P2(t)
 
-Все таблицы InnoDB, utf8mb4. Все id — BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY. Все timestamps в UTC (DATETIME).
+=============================================================================
 
-ГРУППА 1: ИДЕНТИФИКАЦИЯ
+ФАЙЛ 3. DATABASE SCHEMA CONTRACT
+
+Версия: 1.5.0-FINAL
+СУБД: MySQL 8.4 LTS
+Engine: InnoDB
+Charset: utf8mb4
+
+ОБЩИЕ ПРАВИЛА:
+Все id: BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY.
+Все timestamps: DATETIME(6).
+Все economic values: DECIMAL(24,8).
+Все score-domain values: DECIMAL(10,4).
+Политика Append-Only применяется к таблице audit_records. Данные не подлежат физическому удалению (только soft delete для сущностей).
+
+ГРУППА 1: ИДЕНТИФИКАЦИЯ И ДОСТУП
 ТАБЛИЦА users
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * user_key VARCHAR(64) NOT NULL UNIQUE
 * email VARCHAR(255) NOT NULL UNIQUE
 * password_hash VARCHAR(255) NOT NULL
 * display_name VARCHAR(255) NOT NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'active'
-* last_login_at DATETIME NULL
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
-* deleted_at DATETIME NULL (Soft delete. Аудит сохраняет actor_name даже при deleted_at IS NOT NULL).
+* last_login_at DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
+* deleted_at DATETIME(6) NULL
 
 ТАБЛИЦА roles
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * role_key VARCHAR(64) NOT NULL UNIQUE
 * display_name VARCHAR(255) NOT NULL
 * description TEXT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 
 ТАБЛИЦА user_roles
 
-* user_id BIGINT UNSIGNED NOT NULL (FK -> users(id) ON DELETE CASCADE)
-* role_id BIGINT UNSIGNED NOT NULL (FK -> roles(id) ON DELETE CASCADE)
-* assigned_by BIGINT UNSIGNED NULL (FK -> users(id) ON DELETE SET NULL)
-* assigned_at DATETIME NOT NULL
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* user_id BIGINT UNSIGNED NOT NULL
+* role_id BIGINT UNSIGNED NOT NULL
+* assigned_by BIGINT UNSIGNED NULL
+* assigned_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_user_role (user_id, role_id)
+* FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+* FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+* FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
 
 ТАБЛИЦА api_keys
 
-* user_id BIGINT UNSIGNED NOT NULL (FK -> users(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* user_id BIGINT UNSIGNED NOT NULL
 * key_prefix VARCHAR(32) NOT NULL UNIQUE
 * key_hash CHAR(64) NOT NULL
 * name VARCHAR(255) NOT NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'active'
-* last_used_at DATETIME NULL
-* expires_at DATETIME NULL
-* created_at DATETIME NOT NULL
-* revoked_at DATETIME NULL
+* last_used_at DATETIME(6) NULL
+* expires_at DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
+* revoked_at DATETIME(6) NULL
+* FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 
-ГРУППА 2: ИСТОЧНИКИ
+ГРУППА 2: ИСТОЧНИКИ ДАННЫХ
 ТАБЛИЦА data_sources
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * source_key VARCHAR(64) NOT NULL UNIQUE
 * display_name VARCHAR(255) NOT NULL
 * source_type VARCHAR(64) NOT NULL
 * base_url VARCHAR(1024) NOT NULL
 * official_documentation_url VARCHAR(1024) NOT NULL
 * terms_of_use_url VARCHAR(1024) NULL
-* license_status VARCHAR(32) NOT NULL DEFAULT 'unverified'
+* license_status ENUM('public_open', 'public_open_candidate', 'requires_license', 'unverified') NOT NULL DEFAULT 'unverified'
 * production_allowed BOOLEAN NOT NULL DEFAULT FALSE
 * notes TEXT NULL
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
+
+ТАБЛИЦА retry_policies
+
+* policy_key VARCHAR(64) NOT NULL UNIQUE
+* max_retries INT UNSIGNED NOT NULL DEFAULT 3
+* backoff_multiplier DECIMAL(10,4) NOT NULL DEFAULT 2.0000
+* created_at DATETIME(6) NOT NULL
 
 ТАБЛИЦА source_endpoints
 
-* data_source_id BIGINT UNSIGNED NOT NULL (FK -> data_sources(id) ON DELETE RESTRICT)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* data_source_id BIGINT UNSIGNED NOT NULL
 * endpoint_key VARCHAR(128) NOT NULL
 * endpoint_url VARCHAR(2048) NOT NULL
 * method VARCHAR(16) NOT NULL DEFAULT 'GET'
@@ -280,31 +423,27 @@ LabourRetention(t) = 0.0015 * (g9 - 1) * P2(t)
 * requires_auth BOOLEAN NOT NULL DEFAULT FALSE
 * rate_limit_per_minute INT UNSIGNED NULL
 * timeout_seconds INT UNSIGNED NOT NULL DEFAULT 30
-* retry_policy_key VARCHAR(64) NULL (FK -> retry_policies(policy_key) ON DELETE SET NULL)
+* retry_policy_key VARCHAR(64) NULL
 * production_allowed BOOLEAN NOT NULL DEFAULT FALSE
 * validation_status VARCHAR(32) NOT NULL DEFAULT 'pending_validation'
-* last_validated_at DATETIME NULL
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
+* last_validated_at DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_ds_endpoint (data_source_id, endpoint_key)
-
-ТАБЛИЦА retry_policies
-
-* policy_key VARCHAR(64) NOT NULL UNIQUE
-* max_retries INT UNSIGNED NOT NULL DEFAULT 3
-* backoff_multiplier DECIMAL(5,2) NOT NULL DEFAULT 2.00
-* created_at DATETIME NOT NULL
+* FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE RESTRICT
+* FOREIGN KEY (retry_policy_key) REFERENCES retry_policies(policy_key) ON DELETE SET NULL
 
 ГРУППА 3: ИНДИКАТОРЫ И КАЛЕНДАРЬ
 ТАБЛИЦА series
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * series_key VARCHAR(128) NOT NULL UNIQUE
 * display_name VARCHAR(255) NOT NULL
-* data_source_id BIGINT UNSIGNED NOT NULL (FK -> data_sources(id) ON DELETE RESTRICT)
-* source_endpoint_id BIGINT UNSIGNED NULL (FK -> source_endpoints(id) ON DELETE SET NULL)
+* data_source_id BIGINT UNSIGNED NOT NULL
+* source_endpoint_id BIGINT UNSIGNED NULL
 * source_provider VARCHAR(128) NOT NULL
 * underlying_origin VARCHAR(128) NULL
-* source_identifier VARCHAR(255) NULL
+* external_series_identifier VARCHAR(255) NULL
 * table_id VARCHAR(64) NULL
 * vector_id VARCHAR(64) NULL
 * country VARCHAR(16) NOT NULL DEFAULT 'CA'
@@ -316,133 +455,187 @@ LabourRetention(t) = 0.0015 * (g9 - 1) * P2(t)
 * license_status VARCHAR(32) NOT NULL DEFAULT 'unverified'
 * production_allowed BOOLEAN NOT NULL DEFAULT FALSE
 * validation_status VARCHAR(32) NOT NULL DEFAULT 'pending_validation'
-* validation_checked_at DATETIME NULL
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
-* deleted_at DATETIME NULL
+* validation_checked_at DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
+* deleted_at DATETIME(6) NULL
+* FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE RESTRICT
+* FOREIGN KEY (source_endpoint_id) REFERENCES source_endpoints(id) ON DELETE SET NULL
+
+ТАБЛИЦА series_validation_results
+
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* series_id BIGINT UNSIGNED NOT NULL
+* validation_run_key VARCHAR(128) NOT NULL
+* validation_status VARCHAR(32) NOT NULL
+* validation_error_code VARCHAR(64) NULL
+* http_status_code INT NULL
+* endpoint_url VARCHAR(2048) NOT NULL
+* response_schema_hash CHAR(64) NULL
+* latest_observation_date DATE NULL
+* detected_frequency VARCHAR(32) NULL
+* checked_at DATETIME(6) NOT NULL
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+
+ТАБЛИЦА license_reviews
+
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* series_id BIGINT UNSIGNED NOT NULL
+* review_status VARCHAR(32) NOT NULL
+* license_status_result VARCHAR(32) NOT NULL
+* reviewed_by BIGINT UNSIGNED NOT NULL
+* reviewed_at DATETIME(6) NOT NULL
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+* FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE RESTRICT
 
 ТАБЛИЦА release_calendars
 
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* series_id BIGINT UNSIGNED NOT NULL
 * reference_period_start DATE NOT NULL
 * reference_period_end DATE NOT NULL
-* expected_release_date DATETIME NULL
-* actual_release_date DATETIME NULL
-* estimated_release_date DATETIME NULL
+* expected_release_date DATETIME(6) NULL
+* actual_release_date DATETIME(6) NULL
+* estimated_release_date DATETIME(6) NULL
 * release_date_quality VARCHAR(64) NOT NULL DEFAULT 'unknown'
 * release_status VARCHAR(32) NOT NULL DEFAULT 'unknown'
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_release_cal (series_id, reference_period_start, reference_period_end)
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
 
-ГРУППА 4: ВИНТАЖИ И НАБЛЮДЕНИЯ
+ГРУППА 4: ВИНТАЖИ, SNAPSHOTS И НАБЛЮДЕНИЯ
 ТАБЛИЦА ingestion_runs
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * ingestion_run_key VARCHAR(128) NOT NULL UNIQUE
-* data_source_id BIGINT UNSIGNED NOT NULL (FK -> data_sources(id) ON DELETE RESTRICT)
-* started_at DATETIME NOT NULL
-* completed_at DATETIME NULL
+* data_source_id BIGINT UNSIGNED NOT NULL
+* started_at DATETIME(6) NOT NULL
+* completed_at DATETIME(6) NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'running'
 * records_inserted INT UNSIGNED NOT NULL DEFAULT 0
 * error_code VARCHAR(64) NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (data_source_id) REFERENCES data_sources(id) ON DELETE RESTRICT
 
 ТАБЛИЦА data_snapshots
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * snapshot_key VARCHAR(128) NOT NULL UNIQUE
-* ingestion_run_id BIGINT UNSIGNED NOT NULL (FK -> ingestion_runs(id) ON DELETE RESTRICT)
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE RESTRICT)
-* snapshot_timestamp DATETIME NOT NULL
-* vintage_date DATETIME NOT NULL
+* ingestion_run_id BIGINT UNSIGNED NOT NULL
+* series_id BIGINT UNSIGNED NOT NULL
+* snapshot_timestamp DATETIME(6) NOT NULL
+* vintage_date DATETIME(6) NOT NULL
 * source_payload_hash CHAR(64) NOT NULL
 * content_hash CHAR(64) NOT NULL
 * is_duplicate BOOLEAN NOT NULL DEFAULT FALSE
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (ingestion_run_id) REFERENCES ingestion_runs(id) ON DELETE RESTRICT
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE RESTRICT
 
 ТАБЛИЦА data_observations
 
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE RESTRICT)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* series_id BIGINT UNSIGNED NOT NULL
 * observation_date DATE NOT NULL
 * frequency_at_observation VARCHAR(32) NOT NULL
 * raw_value DECIMAL(24,8) NOT NULL
 * unit VARCHAR(64) NOT NULL
 * value_status VARCHAR(32) NOT NULL DEFAULT 'normal'
 * content_hash CHAR(64) NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE RESTRICT
 
 ТАБЛИЦА snapshot_observations
 
-* snapshot_id BIGINT UNSIGNED NOT NULL (FK -> data_snapshots(id) ON DELETE CASCADE)
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE CASCADE)
-* observation_id BIGINT UNSIGNED NOT NULL (FK -> data_observations(id) ON DELETE CASCADE)
-* vintage_date DATETIME NOT NULL
-* release_date DATETIME NULL
-* estimated_release_date DATETIME NULL
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* snapshot_id BIGINT UNSIGNED NOT NULL
+* series_id BIGINT UNSIGNED NOT NULL
+* observation_id BIGINT UNSIGNED NOT NULL
+* vintage_date DATETIME(6) NOT NULL
+* release_date DATETIME(6) NULL
+* estimated_release_date DATETIME(6) NULL
 * release_date_quality VARCHAR(64) NOT NULL
 * reproducibility_allowed BOOLEAN NOT NULL DEFAULT TRUE
 * is_revision BOOLEAN NOT NULL DEFAULT FALSE
 * revision_number INT UNSIGNED NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_snap_obs (snapshot_id, series_id, observation_id)
+* FOREIGN KEY (snapshot_id) REFERENCES data_snapshots(id) ON DELETE CASCADE
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+* FOREIGN KEY (observation_id) REFERENCES data_observations(id) ON DELETE CASCADE
 
 ТАБЛИЦА data_revision_events
 
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE CASCADE)
-* observation_id BIGINT UNSIGNED NOT NULL (FK -> data_observations(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* series_id BIGINT UNSIGNED NOT NULL
+* observation_id BIGINT UNSIGNED NOT NULL
 * previous_value DECIMAL(24,8) NULL
 * new_value DECIMAL(24,8) NOT NULL
 * value_changed BOOLEAN NOT NULL
-* revision_detected_at DATETIME NOT NULL
-* created_at DATETIME NOT NULL
+* revision_detected_at DATETIME(6) NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+* FOREIGN KEY (observation_id) REFERENCES data_observations(id) ON DELETE CASCADE
 
 ТАБЛИЦА data_release_records
 
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE CASCADE)
-* snapshot_id BIGINT UNSIGNED NULL (FK -> data_snapshots(id) ON DELETE SET NULL)
-* release_detected_at DATETIME NOT NULL
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* series_id BIGINT UNSIGNED NOT NULL
+* snapshot_id BIGINT UNSIGNED NULL
+* release_detected_at DATETIME(6) NOT NULL
 * release_status VARCHAR(32) NOT NULL
 * records_seen INT UNSIGNED NOT NULL
 * records_changed INT UNSIGNED NOT NULL
 * is_revision BOOLEAN NOT NULL DEFAULT FALSE
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+* FOREIGN KEY (snapshot_id) REFERENCES data_snapshots(id) ON DELETE SET NULL
 
 ГРУППА 5: КОНФИГУРАЦИИ
 ТАБЛИЦА model_versions
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * model_version VARCHAR(32) NOT NULL UNIQUE
 * release_date DATE NOT NULL
 * formula_key VARCHAR(64) NOT NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'draft'
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 
 ТАБЛИЦА risk_configurations
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * configuration_key VARCHAR(128) NOT NULL UNIQUE
-* owner_user_id BIGINT UNSIGNED NULL (FK -> users(id) ON DELETE SET NULL)
+* owner_user_id BIGINT UNSIGNED NULL
 * name VARCHAR(255) NOT NULL
 * configuration_type VARCHAR(64) NOT NULL
 * lifecycle_status VARCHAR(32) NOT NULL DEFAULT 'draft'
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
-* deleted_at DATETIME NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
+* deleted_at DATETIME(6) NULL
+* FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
 
 ТАБЛИЦА risk_configuration_versions
 
-* configuration_id BIGINT UNSIGNED NOT NULL (FK -> risk_configurations(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* configuration_id BIGINT UNSIGNED NOT NULL
 * version_number INT UNSIGNED NOT NULL
 * version_key VARCHAR(128) NOT NULL UNIQUE
-* model_version_id BIGINT UNSIGNED NOT NULL (FK -> model_versions(id) ON DELETE RESTRICT)
+* model_version_id BIGINT UNSIGNED NOT NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'draft'
 * is_published BOOLEAN NOT NULL DEFAULT FALSE
 * coverage_minimum DECIMAL(10,4) NOT NULL DEFAULT 60.0000
 * config_hash CHAR(64) NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_config_ver (configuration_id, version_number)
+* FOREIGN KEY (configuration_id) REFERENCES risk_configurations(id) ON DELETE CASCADE
+* FOREIGN KEY (model_version_id) REFERENCES model_versions(id) ON DELETE RESTRICT
 
 ТАБЛИЦА indicator_configs
 
-* configuration_version_id BIGINT UNSIGNED NOT NULL (FK -> risk_configuration_versions(id) ON DELETE CASCADE)
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE RESTRICT)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* configuration_version_id BIGINT UNSIGNED NOT NULL
+* series_id BIGINT UNSIGNED NOT NULL
 * indicator_key VARCHAR(128) NOT NULL
 * category VARCHAR(64) NOT NULL
 * original_weight DECIMAL(10,4) NOT NULL
@@ -459,35 +652,47 @@ LabourRetention(t) = 0.0015 * (g9 - 1) * P2(t)
 * outside_band_min_boundary DECIMAL(24,8) NULL
 * outside_band_max_boundary DECIMAL(24,8) NULL
 * frequency_discount DECIMAL(10,4) NOT NULL DEFAULT 1.0000
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_ind_conf (configuration_version_id, indicator_key)
+* FOREIGN KEY (configuration_version_id) REFERENCES risk_configuration_versions(id) ON DELETE CASCADE
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE RESTRICT
 
 ТАБЛИЦА risk_configuration_overrides
 
-* indicator_config_id BIGINT UNSIGNED NOT NULL (FK -> indicator_configs(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* indicator_config_id BIGINT UNSIGNED NOT NULL
 * override_type VARCHAR(64) NOT NULL
 * override_reason TEXT NOT NULL
-* approved_by BIGINT UNSIGNED NOT NULL (FK -> users(id) ON DELETE RESTRICT)
-* approved_at DATETIME NOT NULL
-* created_at DATETIME NOT NULL
+* approved_by BIGINT UNSIGNED NOT NULL
+* approved_at DATETIME(6) NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (indicator_config_id) REFERENCES indicator_configs(id) ON DELETE CASCADE
+* FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE RESTRICT
 
 ТАБЛИЦА risk_band_threshold_sets
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * threshold_set_key VARCHAR(128) NOT NULL UNIQUE
 * version INT UNSIGNED NOT NULL
+* very_low_min DECIMAL(10,4) NOT NULL
 * very_low_max DECIMAL(10,4) NOT NULL
+* low_min DECIMAL(10,4) NOT NULL
 * low_max DECIMAL(10,4) NOT NULL
+* moderate_min DECIMAL(10,4) NOT NULL
 * moderate_max DECIMAL(10,4) NOT NULL
+* high_min DECIMAL(10,4) NOT NULL
 * high_max DECIMAL(10,4) NOT NULL
+* severe_min DECIMAL(10,4) NOT NULL
 * severe_max DECIMAL(10,4) NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 
 ГРУППА 6: РЕЗУЛЬТАТЫ И БЭКТЕСТЫ
 ТАБЛИЦА risk_score_results
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * score_key VARCHAR(128) NOT NULL UNIQUE
-* configuration_version_id BIGINT UNSIGNED NOT NULL (FK -> risk_configuration_versions(id) ON DELETE RESTRICT)
-* vintage_date DATETIME NOT NULL
+* configuration_version_id BIGINT UNSIGNED NOT NULL
+* vintage_date DATETIME(6) NOT NULL
 * calculation_mode VARCHAR(32) NOT NULL
 * calculation_status VARCHAR(64) NOT NULL
 * risk_score DECIMAL(10,4) NULL
@@ -497,20 +702,24 @@ LabourRetention(t) = 0.0015 * (g9 - 1) * P2(t)
 * required_indicator_missing BOOLEAN NOT NULL DEFAULT FALSE
 * effective_weights_sum DECIMAL(10,4) NOT NULL
 * calculation_hash CHAR(64) NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (configuration_version_id) REFERENCES risk_configuration_versions(id) ON DELETE RESTRICT
 
 ТАБЛИЦА risk_score_warnings
 
-* risk_score_result_id BIGINT UNSIGNED NOT NULL (FK -> risk_score_results(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* risk_score_result_id BIGINT UNSIGNED NOT NULL
 * warning_code VARCHAR(64) NOT NULL
 * message TEXT NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (risk_score_result_id) REFERENCES risk_score_results(id) ON DELETE CASCADE
 
 ТАБЛИЦА risk_score_indicator_contributions
 
-* risk_score_result_id BIGINT UNSIGNED NOT NULL (FK -> risk_score_results(id) ON DELETE CASCADE)
-* indicator_config_id BIGINT UNSIGNED NOT NULL (FK -> indicator_configs(id) ON DELETE RESTRICT)
-* series_id BIGINT UNSIGNED NOT NULL (FK -> series(id) ON DELETE RESTRICT)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* risk_score_result_id BIGINT UNSIGNED NOT NULL
+* indicator_config_id BIGINT UNSIGNED NOT NULL
+* series_id BIGINT UNSIGNED NOT NULL
 * raw_value DECIMAL(24,8) NULL
 * transformed_value DECIMAL(24,8) NULL
 * normalized_indicator_score DECIMAL(10,4) NULL
@@ -520,112 +729,171 @@ LabourRetention(t) = 0.0015 * (g9 - 1) * P2(t)
 * contribution_value DECIMAL(10,4) NULL
 * is_available BOOLEAN NOT NULL
 * missing_reason VARCHAR(64) NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (risk_score_result_id) REFERENCES risk_score_results(id) ON DELETE CASCADE
+* FOREIGN KEY (indicator_config_id) REFERENCES indicator_configs(id) ON DELETE RESTRICT
+* FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE RESTRICT
+
+ТАБЛИЦА historical_episodes
+
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* episode_key VARCHAR(128) NOT NULL UNIQUE
+* display_name VARCHAR(255) NOT NULL
+* start_date DATE NOT NULL
+* end_date DATE NOT NULL
+* stress_type VARCHAR(64) NOT NULL
+* severity_label VARCHAR(32) NOT NULL
+* expected_macro_signature JSON NULL
+* source_notes TEXT NULL
+* inclusion_rationale TEXT NOT NULL
+* detection_threshold_score DECIMAL(10,4) NOT NULL
+* detection_threshold_band VARCHAR(32) NOT NULL
+* detection_window_before_days INT UNSIGNED NOT NULL DEFAULT 90
+* detection_window_after_days INT UNSIGNED NOT NULL DEFAULT 90
+* minimum_persistence_periods INT UNSIGNED NOT NULL DEFAULT 1
+* status VARCHAR(32) NOT NULL DEFAULT 'draft'
+* approved_by BIGINT UNSIGNED NULL
+* approved_at DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
+* FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE RESTRICT
 
 ТАБЛИЦА backtest_runs
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * backtest_run_key VARCHAR(128) NOT NULL UNIQUE
-* configuration_version_id BIGINT UNSIGNED NOT NULL (FK -> risk_configuration_versions(id) ON DELETE RESTRICT)
+* configuration_version_id BIGINT UNSIGNED NOT NULL
 * run_status VARCHAR(32) NOT NULL DEFAULT 'running'
 * false_positive_count INT UNSIGNED NOT NULL DEFAULT 0
-* small_sample_warning BOOLEAN NOT NULL DEFAULT TRUE
+* small_sample_warning BOOLEAN NULL
 * sample_size_n INT UNSIGNED NOT NULL
-* started_at DATETIME NOT NULL
-* completed_at DATETIME NULL
+* started_at DATETIME(6) NOT NULL
+* completed_at DATETIME(6) NULL
+* FOREIGN KEY (configuration_version_id) REFERENCES risk_configuration_versions(id) ON DELETE RESTRICT
 
 ТАБЛИЦА backtest_episode_results
 
-* backtest_run_id BIGINT UNSIGNED NOT NULL (FK -> backtest_runs(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* backtest_run_id BIGINT UNSIGNED NOT NULL
+* episode_id BIGINT UNSIGNED NOT NULL
 * episode_key VARCHAR(128) NOT NULL
 * detected BOOLEAN NOT NULL
-* first_detection_date DATETIME NULL
-* created_at DATETIME NOT NULL
+* first_detection_date DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (backtest_run_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
+* FOREIGN KEY (episode_id) REFERENCES historical_episodes(id) ON DELETE CASCADE
 
 ТАБЛИЦА backtest_episode_score_points
 
-* backtest_episode_result_id BIGINT UNSIGNED NOT NULL (FK -> backtest_episode_results(id) ON DELETE CASCADE)
-* risk_score_result_id BIGINT UNSIGNED NOT NULL (FK -> risk_score_results(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* backtest_episode_result_id BIGINT UNSIGNED NOT NULL
+* risk_score_result_id BIGINT UNSIGNED NOT NULL
 * detection_threshold_met BOOLEAN NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (backtest_episode_result_id) REFERENCES backtest_episode_results(id) ON DELETE CASCADE
+* FOREIGN KEY (risk_score_result_id) REFERENCES risk_score_results(id) ON DELETE CASCADE
 
 ГРУППА 7: NARRATIVES, JOBS И АУДИТ
 ТАБЛИЦА narrative_slots
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * slot_key VARCHAR(128) NOT NULL
 * version_number INT UNSIGNED NOT NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'draft'
 * scientific_integrity_status VARCHAR(32) NOT NULL DEFAULT 'pending'
-* approved_by BIGINT UNSIGNED NULL (FK -> users(id) ON DELETE SET NULL)
-* approved_at DATETIME NULL
-* created_at DATETIME NOT NULL
+* approved_by BIGINT UNSIGNED NULL
+* approved_at DATETIME(6) NULL
+* created_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_slot_ver (slot_key, version_number)
+* FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL
 
 ТАБЛИЦА narrative_slot_translations
 
-* narrative_slot_id BIGINT UNSIGNED NOT NULL (FK -> narrative_slots(id) ON DELETE CASCADE)
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* narrative_slot_id BIGINT UNSIGNED NOT NULL
 * locale VARCHAR(16) NOT NULL
 * text TEXT NOT NULL
 * text_hash CHAR(64) NOT NULL
-* created_at DATETIME NOT NULL
-* updated_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
+* updated_at DATETIME(6) NOT NULL
 * UNIQUE KEY uq_slot_loc (narrative_slot_id, locale)
+* FOREIGN KEY (narrative_slot_id) REFERENCES narrative_slots(id) ON DELETE CASCADE
 
 ТАБЛИЦА narrative_reports
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * report_key VARCHAR(128) NOT NULL UNIQUE
-* risk_score_result_id BIGINT UNSIGNED NOT NULL (FK -> risk_score_results(id) ON DELETE RESTRICT)
+* risk_score_result_id BIGINT UNSIGNED NOT NULL
 * locale VARCHAR(16) NOT NULL
 * report_status VARCHAR(32) NOT NULL
 * seed_hash CHAR(64) NOT NULL
 * seed_int BIGINT UNSIGNED NOT NULL
 * full_text MEDIUMTEXT NOT NULL
 * scientific_integrity_status VARCHAR(32) NOT NULL
-* generated_at DATETIME NOT NULL
+* generated_at DATETIME(6) NOT NULL
+* FOREIGN KEY (risk_score_result_id) REFERENCES risk_score_results(id) ON DELETE RESTRICT
 
 ТАБЛИЦА narrative_report_slots
 
-* narrative_report_id BIGINT UNSIGNED NOT NULL (FK -> narrative_reports(id) ON DELETE CASCADE)
-* narrative_slot_id BIGINT UNSIGNED NOT NULL (FK -> narrative_slots(id) ON DELETE RESTRICT)
-* created_at DATETIME NOT NULL
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+* narrative_report_id BIGINT UNSIGNED NOT NULL
+* narrative_slot_id BIGINT UNSIGNED NOT NULL
+* created_at DATETIME(6) NOT NULL
+* FOREIGN KEY (narrative_report_id) REFERENCES narrative_reports(id) ON DELETE CASCADE
+* FOREIGN KEY (narrative_slot_id) REFERENCES narrative_slots(id) ON DELETE RESTRICT
 
 ТАБЛИЦА job_runs
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * job_key VARCHAR(128) NOT NULL UNIQUE
 * job_type VARCHAR(128) NOT NULL
 * status VARCHAR(32) NOT NULL DEFAULT 'queued'
-* started_at DATETIME NOT NULL
-* completed_at DATETIME NULL
+* started_at DATETIME(6) NOT NULL
+* completed_at DATETIME(6) NULL
 * error_code VARCHAR(64) NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 
 ТАБЛИЦА system_errors
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * error_key VARCHAR(128) NOT NULL UNIQUE
 * error_code VARCHAR(64) NOT NULL
 * http_status_code INT NULL
 * human_message TEXT NOT NULL
 * machine_message TEXT NOT NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 
-ТАБЛИЦА audit_records (Append-Only)
+ТАБЛИЦА audit_records (Strictly Append-Only)
 
+* id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
 * audit_key VARCHAR(128) NOT NULL UNIQUE
-* actor_user_id BIGINT UNSIGNED NULL (Остается NULL, если system/api)
-* actor_name VARCHAR(255) NULL (Денормализовано для сохранения после soft delete юзера)
+* actor_user_id BIGINT UNSIGNED NULL
+* actor_name VARCHAR(255) NULL
 * actor_role VARCHAR(64) NULL
 * event_type VARCHAR(128) NOT NULL
 * entity_type VARCHAR(128) NOT NULL
 * entity_id BIGINT UNSIGNED NULL
 * diff_json JSON NULL
-* created_at DATETIME NOT NULL
+* created_at DATETIME(6) NOT NULL
 
-ЧАСТЬ 9. PHILOSOPHICAL FOUNDATIONS
+=============================================================================
 
-9.1 ЭПИСТЕМОЛОГИЯ ОТКАЗА ОТ ИЛЛЮЗИИ ЗНАНИЯ
-MacroRisk не является хрустальным шаром. Риск-скор — это строго модельная оценка на основе явно заданных конфигураций. Он не измеряет будущее.
-В интерфейсе и отчётах запрещены формулировки, предполагающие уверенность (causal proof, forecast guarantees).
+ФАЙЛ 4. PHILOSOPHICAL AND SCIENTIFIC INTEGRITY FOUNDATION
 
-9.2 УРОК МАНИТОБЫ И ВНЕШНЕ ПОДДЕРЖИВАЕМАЯ УСТОЙЧИВОСТЬ
-Общество моделируется как адаптивная метаболическая система. Видимая демографическая стабильность (сохранение объёма когорты P2) не гарантирует внутреннего благополучия, если естественное воспроизводство деградирует (падение рождаемости, отток кадров).
-Наблюдаемая на данных Манитобы (2020-2024) стабильность обеспечивается мощным внешним миграционным притоком.
-Философский закон модели: Устойчивость может быть внешней, а не внутренней. Модель обязана разделять эти два состояния и делать их прозрачными для аналитика. Терминология должна оставаться строгой: "The model demonstrates structural dependence on migration replenishment", избегая публицистических терминов ("аппарат искусственного жизнеобеспечения") в production-текстах.
+Версия: 1.5.0-FINAL
+Статус: Philosophical Truth
+
+1. ЭПИСТЕМОЛОГИЯ ОТКАЗА ОТ ИЛЛЮЗИИ ЗНАНИЯ
+Главный принцип системы: Система не должна притворяться, что знает то, чего не поддерживают данные.
+MacroRisk — это система детерминированной диагностики структурной устойчивости, а не механизм прогнозирования (forecasting). Риск-скор является исключительно модельной оценкой (model-derived estimate), полученной на основе конфигурации и явно заданных порогов, а не эмпирически наблюдаемым фактом экономики.
+2. ПРИНЦИПЫ НАУЧНОЙ ЧЕСТНОСТИ В ТЕКСТАХ И ОТЧЁТАХ
+Система категорически запрещает:
+
+* Causal Claims: Заявлять причинно-следственные связи без методологического доказательства (запрет слов "caused by").
+* False Certainty: Генерировать "прогнозы" и использовать слова "гарантирует", "доказывает" или "неизбежно".
+* Fake Precision: Показывать фальшивую статистическую точность на малых выборках. Бэктест с количеством исторических эпизодов менее 10 (N < 10) является исключительно диагностическим. Агрегированные метрики точности (recall, precision) для малых выборок запрещены и скрываются. Отображаются только абсолютные числа (detected count, missed count) с обязательным предупреждением.
+* LLM Нарративы: Использовать Generative AI (LLM) для формирования финальных аналитических выводов в обход детерминированных текстовых слотов. Seed Hash (hex string) и Seed Integer (BIG_ENDIAN derived из первых 8 байт хеша) обеспечивают детерминированный выбор предварительно проверенных человеком текстов.
+
+3. УРОК МАНИТОБЫ И ГРАНИЦЫ ИНТЕРПРЕТАЦИИ
+На основе демографического анализа Манитобы система выводит важнейший методологический концепт: видимая стабильность системы не означает её внутреннее благополучие. Стабильность когорты P2 обеспечивается внешней миграцией (migration replenishment), компенсирующей падение внутреннего естественного воспроизводства.
+Интерпретационные рамки (Boundaries): В отчётах запрещены публицистические или паникерские термины ("аппарат искусственного жизнеобеспечения", "крах системы"). Допустимая терминология: "The demographic extension suggests external-replenishment dependence under the configured assumptions." Модель разделяет внутренние механизмы удержания и внешние механизмы подпитки через прозрачные параметры калибровки.
