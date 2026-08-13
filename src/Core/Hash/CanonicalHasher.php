@@ -7,8 +7,13 @@ namespace MacroRisk\Core\Hash;
 use JsonException;
 use RuntimeException;
 
-final class Hash
+final class CanonicalHasher
 {
+    private const JSON_FLAGS =
+        JSON_THROW_ON_ERROR
+        | JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES;
+
     public static function sha256(string $value): string
     {
         return hash('sha256', $value);
@@ -18,14 +23,10 @@ final class Hash
     {
         self::assertNoFloats($data);
 
-        $normalized = self::normalize($data);
-
         try {
             return json_encode(
-                $normalized,
-                JSON_THROW_ON_ERROR
-                | JSON_UNESCAPED_UNICODE
-                | JSON_UNESCAPED_SLASHES
+                self::normalize($data),
+                self::JSON_FLAGS
             );
         } catch (JsonException $exception) {
             throw new RuntimeException(
@@ -36,7 +37,7 @@ final class Hash
         }
     }
 
-    public static function canonical(array $data): string
+    public static function hash(array $data): string
     {
         return self::sha256(
             self::canonicalJson($data)
