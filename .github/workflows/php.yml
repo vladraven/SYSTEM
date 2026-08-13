@@ -1,1 +1,18 @@
+steps:
+  # STREAMING_CHUNK:Checking out repository source code...
+  - name: Checkout Repository
+    uses: actions/checkout@v4
 
+  # STREAMING_CHUNK:Setting up PHP 8.3 environment...
+  - name: Setup PHP 8.3
+    uses: shivammathur/setup-php@v2
+    with:
+      php-version: '8.3'
+      coverage: none
+
+  # STREAMING_CHUNK:Running syntax validation on PHP files...
+  - name: Check PHP Syntax
+    run: |
+      find . -type f -name "*.php" | while read -r file; do
+        php -l "$file" || exit 1
+      done
