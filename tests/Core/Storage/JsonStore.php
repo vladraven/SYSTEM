@@ -79,30 +79,6 @@ final class JsonStore
 
     public function delete(string $filename): void
     {
-        if (!$this->storage->exists($filename)) {
-            return;
-        }
-
-        $path = $this->storagePath($filename);
-
-        if (!unlink($path)) {
-            throw new RuntimeException(
-                "Unable to delete JSON file: {$filename}"
-            );
-        }
-    }
-
-    private function storagePath(string $filename): string
-    {
-        $reflection = new \ReflectionClass($this->storage);
-
-        $property = $reflection->getProperty('directory');
-
-        return rtrim(
-            (string) $property->getValue($this->storage),
-            DIRECTORY_SEPARATOR
-        )
-        . DIRECTORY_SEPARATOR
-        . $filename;
+        $this->storage->delete($filename);
     }
 }
