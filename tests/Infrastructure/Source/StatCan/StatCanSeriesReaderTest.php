@@ -128,51 +128,41 @@ function createReader(
     );
 }
 
-function successResponse(
-    array $datapoints,
-    int $productId = 35100003,
-    int $vectorId = 32164132,
-    string $coordinate = '1.12.0.0.0.0.0.0.0.0'
-): string {
-    return json_encode(
-        [
-            [
-                'status' => 'SUCCESS',
-                'object' => [
-                    'responseStatusCode' => 0,
-                    'productId' => $productId,
-                    'coordinate' => $coordinate,
-                    'vectorId' => $vectorId,
-                    'vectorDataPoint' => $datapoints,
-                ],
-            ],
-        ],
-        JSON_THROW_ON_ERROR
-    );
-}
-
 $tests = [
     'latest periods are parsed into deterministic records' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                successResponse([
-                    [
-                        'refPer' => '2017-07-01',
-                        'refPer2' => '',
-                        'refPerRaw' => '2017-01-01',
-                        'refPerRaw2' => '',
-                        'value' => '18381',
-                        'decimals' => 0,
-                        'scalarFactorCode' => 0,
-                        'symbolCode' => 0,
-                        'statusCode' => 0,
-                        'securityLevelCode' => 0,
-                        'releaseTime' => '2017-12-07T08:30',
-                        'frequencyCode' => 6,
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.12.0.0.0.0.0.0.0.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2017-07-01',
+                                'refPer2' => '',
+                                'refPerRaw' => '2017-01-01',
+                                'refPerRaw2' => '',
+                                'value' => '18381',
+                                'decimals' => 0,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2017-12-07T08:30',
+                                'frequencyCode' => 6,
+                            ],
+                        ],
                     ],
-                ])
-            )
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -213,24 +203,37 @@ $tests = [
     },
 
     'integer value is converted to decimal string without precision loss' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                successResponse([
-                    [
-                        'refPer' => '2026-01-01',
-                        'refPerRaw' => '2026-01-01',
-                        'value' => 36474968,
-                        'decimals' => 0,
-                        'scalarFactorCode' => 0,
-                        'symbolCode' => 0,
-                        'statusCode' => 0,
-                        'securityLevelCode' => 0,
-                        'releaseTime' => '2026-02-01T08:30',
-                        'frequencyCode' => 9,
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2026-01-01',
+                                'refPerRaw' => '2026-01-01',
+                                'value' => 36474968,
+                                'decimals' => 0,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2026-02-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
+                        ],
                     ],
-                ])
-            )
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -247,23 +250,37 @@ $tests = [
     },
 
     'string decimal value is preserved exactly' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                successResponse([
-                    [
-                        'refPer' => '2026-01-01',
-                        'refPerRaw' => '2026-01-01',
-                        'value' => '12345.678901234567',
-                        'decimals' => 6,
-                        'scalarFactorCode' => 0,
-                        'symbolCode' => 0,
-                        'statusCode' => 0,
-                        'releaseTime' => '2026-02-01T08:30',
-                        'frequencyCode' => 9,
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2026-01-01',
+                                'refPerRaw' => '2026-01-01',
+                                'value' => '12345.678901234567',
+                                'decimals' => 6,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2026-02-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
+                        ],
                     ],
-                ])
-            )
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -280,35 +297,34 @@ $tests = [
     },
 
     'floating point value is normalized' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                '[
-                    {
-                        "status": "SUCCESS",
-                        "object": {
-                            "responseStatusCode": 0,
-                            "productId": 35100003,
-                            "coordinate": "1.0",
-                            "vectorId": 32164132,
-                            "vectorDataPoint": [
-                                {
-                                    "refPer": "2026-01-01",
-                                    "refPerRaw": "2026-01-01",
-                                    "value": 528800.0,
-                                    "decimals": 1,
-                                    "scalarFactorCode": 0,
-                                    "symbolCode": 0,
-                                    "statusCode": 0,
-                                    "securityLevelCode": 0,
-                                    "releaseTime": "2026-02-01T08:30",
-                                    "frequencyCode": 9
-                                }
-                            ]
+        $response = '[
+            {
+                "status": "SUCCESS",
+                "object": {
+                    "responseStatusCode": 0,
+                    "productId": 35100003,
+                    "coordinate": "1.0",
+                    "vectorId": 32164132,
+                    "vectorDataPoint": [
+                        {
+                            "refPer": "2026-01-01",
+                            "refPerRaw": "2026-01-01",
+                            "value": 528800.0,
+                            "decimals": 1,
+                            "scalarFactorCode": 0,
+                            "symbolCode": 0,
+                            "statusCode": 0,
+                            "securityLevelCode": 0,
+                            "releaseTime": "2026-02-01T08:30",
+                            "frequencyCode": 9
                         }
-                    }
-                ]'
-            )
+                    ]
+                }
+            }
+        ]';
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -325,23 +341,37 @@ $tests = [
     },
 
     'invalid decimal string is rejected' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                successResponse([
-                    [
-                        'refPer' => '2026-01-01',
-                        'refPerRaw' => '2026-01-01',
-                        'value' => '1.2.3',
-                        'decimals' => 2,
-                        'scalarFactorCode' => 0,
-                        'symbolCode' => 0,
-                        'statusCode' => 0,
-                        'releaseTime' => '2026-02-01T08:30',
-                        'frequencyCode' => 9,
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2026-01-01',
+                                'refPerRaw' => '2026-01-01',
+                                'value' => '1.2.3',
+                                'decimals' => 2,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2026-02-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
+                        ],
                     ],
-                ])
-            )
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -358,22 +388,36 @@ $tests = [
     },
 
     'missing datapoint field is rejected' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                successResponse([
-                    [
-                        'refPer' => '2026-01-01',
-                        'refPerRaw' => '2026-01-01',
-                        'value' => '10',
-                        'decimals' => 0,
-                        'scalarFactorCode' => 0,
-                        'symbolCode' => 0,
-                        'statusCode' => 0,
-                        'releaseTime' => '2026-02-01T08:30',
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2026-01-01',
+                                'refPerRaw' => '2026-01-01',
+                                'value' => '10',
+                                'decimals' => 0,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'releaseTime' => '2026-02-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
+                        ],
                     ],
-                ])
-            )
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -385,30 +429,29 @@ $tests = [
                     '32164132'
                 );
             },
-            'Missing frequencyCode must be rejected.'
+            'Missing securityLevelCode must be rejected.'
         );
     },
 
     'nonzero response status is rejected' => static function (): void {
-        $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                json_encode(
-                    [
-                        [
-                            'status' => 'SUCCESS',
-                            'object' => [
-                                'responseStatusCode' => 1,
-                                'productId' => 35100003,
-                                'coordinate' => '1.0',
-                                'vectorId' => 32164132,
-                                'vectorDataPoint' => [],
-                            ],
-                        ],
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 1,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [],
                     ],
-                    JSON_THROW_ON_ERROR
-                )
-            )
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
+        $transport = new FakeStatCanReaderTransport(
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -425,19 +468,18 @@ $tests = [
     },
 
     'failed envelope status is rejected' => static function (): void {
+        $response = json_encode(
+            [
+                [
+                    'status' => 'FAILED',
+                    'object' => null,
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
         $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                json_encode(
-                    [
-                        [
-                            'status' => 'FAILED',
-                            'object' => null,
-                        ],
-                    ],
-                    JSON_THROW_ON_ERROR
-                )
-            )
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -454,11 +496,24 @@ $tests = [
     },
 
     'empty datapoint collection is rejected' => static function (): void {
+        $response = json_encode(
+            [
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 32164132,
+                        'vectorDataPoint' => [],
+                    ],
+                ],
+            ],
+            JSON_THROW_ON_ERROR
+        );
+
         $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                successResponse([])
-            )
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
@@ -475,75 +530,72 @@ $tests = [
     },
 
     'multiple envelopes and datapoints are flattened deterministically' => static function (): void {
-        $response = [
+        $response = json_encode(
             [
-                'status' => 'SUCCESS',
-                'object' => [
-                    'responseStatusCode' => 0,
-                    'productId' => 35100003,
-                    'coordinate' => '1.0',
-                    'vectorId' => 1,
-                    'vectorDataPoint' => [
-                        [
-                            'refPer' => '2026-01-01',
-                            'refPerRaw' => '2026-01-01',
-                            'value' => '1',
-                            'decimals' => 0,
-                            'scalarFactorCode' => 0,
-                            'symbolCode' => 0,
-                            'statusCode' => 0,
-                            'securityLevelCode' => 0,
-                            'releaseTime' => '2026-02-01T08:30',
-                            'frequencyCode' => 9,
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '1.0',
+                        'vectorId' => 1,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2026-01-01',
+                                'refPerRaw' => '2026-01-01',
+                                'value' => '1',
+                                'decimals' => 0,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2026-02-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
+                            [
+                                'refPer' => '2026-04-01',
+                                'refPerRaw' => '2026-04-01',
+                                'value' => '2',
+                                'decimals' => 0,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2026-05-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
                         ],
-                        [
-                            'refPer' => '2026-04-01',
-                            'refPerRaw' => '2026-04-01',
-                            'value' => '2',
-                            'decimals' => 0,
-                            'scalarFactorCode' => 0,
-                            'symbolCode' => 0,
-                            'statusCode' => 0,
-                            'securityLevelCode' => 0,
-                            'releaseTime' => '2026-05-01T08:30',
-                            'frequencyCode' => 9,
+                    ],
+                ],
+                [
+                    'status' => 'SUCCESS',
+                    'object' => [
+                        'responseStatusCode' => 0,
+                        'productId' => 35100003,
+                        'coordinate' => '2.0',
+                        'vectorId' => 2,
+                        'vectorDataPoint' => [
+                            [
+                                'refPer' => '2026-01-01',
+                                'refPerRaw' => '2026-01-01',
+                                'value' => '3',
+                                'decimals' => 0,
+                                'scalarFactorCode' => 0,
+                                'symbolCode' => 0,
+                                'statusCode' => 0,
+                                'securityLevelCode' => 0,
+                                'releaseTime' => '2026-02-01T08:30',
+                                'frequencyCode' => 9,
+                            ],
                         ],
                     ],
                 ],
             ],
-            [
-                'status' => 'SUCCESS',
-                'object' => [
-                    'responseStatusCode' => 0,
-                    'productId' => 35100003,
-                    'coordinate' => '2.0',
-                    'vectorId' => 2,
-                    'vectorDataPoint' => [
-                        [
-                            'refPer' => '2026-01-01',
-                            'refPerRaw' => '2026-01-01',
-                            'value' => '3',
-                            'decimals' => 0,
-                            'scalarFactorCode' => 0,
-                            'symbolCode' => 0,
-                            'statusCode' => 0,
-                            'securityLevelCode' => 0,
-                            'releaseTime' => '2026-02-01T08:30',
-                            'frequencyCode' => 9,
-                        ],
-                    ],
-                ],
-            ],
-        ];
+            JSON_THROW_ON_ERROR
+        );
 
         $transport = new FakeStatCanReaderTransport(
-            new HttpResponse(
-                200,
-                json_encode(
-                    $response,
-                    JSON_THROW_ON_ERROR
-                )
-            )
+            new HttpResponse(200, $response)
         );
 
         $reader = createReader($transport);
