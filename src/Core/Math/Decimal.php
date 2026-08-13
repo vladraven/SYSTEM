@@ -184,58 +184,8 @@ final class Decimal
             );
         }
 
-        $factor = '1' . str_repeat('0', $scale);
-        $negative = $this->isNegative();
-        $absolute = $this->absolute()->value;
-
-        $truncated = bcmul(
-            $absolute,
-            $factor,
-            0
-        );
-
-        $truncatedValue = bcdiv(
-            $truncated,
-            $factor,
-            $this->scale
-        );
-
-        $remainder = bcsub(
-            $absolute,
-            $truncatedValue,
-            $this->scale
-        );
-
-        $half = bcdiv(
-            '5',
-            '1' . str_repeat('0', $scale + 1),
-            $this->scale
-        );
-
-        if (bccomp($remainder, $half, $this->scale) >= 0) {
-            $truncated = bcadd(
-                $truncated,
-                '1',
-                0
-            );
-        }
-
-        $result = bcdiv(
-            $truncated,
-            $factor,
-            $scale
-        );
-
-        if ($negative && bccomp($result, '0', $scale) !== 0) {
-            $result = bcmul(
-                $result,
-                '-1',
-                $scale
-            );
-        }
-
         return new self(
-            $result,
+            self::roundValue($this->value, $scale),
             $scale
         );
     }
@@ -284,11 +234,77 @@ final class Decimal
             );
         }
 
-        return bcadd(
-            $value,
+        $parts = explode('.', ltrim($value, '+-'), 2);
+        $fractionalDigits = isset($parts[1])
+            ? strlen($parts[1])
+            : 0;
+
+        if ($fractionalDigits <= $scale) {
+            return bcadd(
+                $value,
+                '0',
+                $scale
+            );
+        }
+
+        return self::roundValue($value, $scale);
+    }
+
+    private static function roundValue(string $value, int $scale): string
+    {
+        $negative = str_starts_with($value, '-');
+        $absolute = ltrim($value, '+-');
+
+        $parts = explode('.', $absolute, 2);
+        $integer = $parts[0];
+        $fraction = $parts[1] ?? '';
+
+        if (strlen($fraction) <= $scale) {
+            $normalized = bcadd(
+                $absolute,
+                '0',
+                $scale
+            );
+
+            return $negative && $normalized !== '0.' . str_repeat('0', $scale)
+                ? bcmul($normalized, '-1', $scale)
+                : $normalized;
+        }
+
+        $kept = substr($fraction, 0, $scale);
+        $discarded = $fraction[$scale] ?? '0';
+
+        $base = $scale === 0
+            ? $integer
+            : $integer . '.' . $kept;
+
+        $rounded = bcadd(
+            $base,
             '0',
             $scale
         );
+
+        if ($discarded >= '5') {
+            $increment = $scale === 0
+                ? '1'
+                : '0.' . str_repeat('0', $scale - 1) . '1';
+
+            $rounded = bcadd(
+                $rounded,
+                $increment,
+                $scale
+            );
+        }
+
+        if ($negative && bccomp($rounded, '0', $scale) !== 0) {
+            $rounded = bcmul(
+                $rounded,
+                '-1',
+                $scale
+            );
+        }
+
+        return $rounded;
     }
 
     private static function operationScale(
