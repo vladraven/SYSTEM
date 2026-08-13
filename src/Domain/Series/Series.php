@@ -11,6 +11,15 @@ final class Series
 {
     private const SCHEMA_VERSION = 1;
 
+    private const FREQUENCIES = [
+        'daily',
+        'weekly',
+        'monthly',
+        'quarterly',
+        'annual',
+        'irregular',
+    ];
+
     /**
      * @var list<Observation>
      */
@@ -48,12 +57,17 @@ final class Series
             'title'
         );
 
-        self::assertFrequency($frequency);
+        self::assertFrequency(
+            $frequency
+        );
 
         self::assertText(
             $unit,
             'unit'
         );
+
+        $validatedObservations = [];
+        $referencePeriods = [];
 
         foreach ($observations as $index => $observation) {
             if (!$observation instanceof Observation) {
@@ -61,9 +75,22 @@ final class Series
                     "Series observation at index {$index} must be an Observation."
                 );
             }
+
+            $referencePeriod = $observation->referencePeriod();
+
+            if (isset($referencePeriods[$referencePeriod])) {
+                throw new RuntimeException(
+                    "Series cannot contain duplicate reference period: {$referencePeriod}"
+                );
+            }
+
+            $referencePeriods[$referencePeriod] = true;
+            $validatedObservations[] = $observation;
         }
 
-        $this->observations = array_values($observations);
+        $this->observations = array_values(
+            $validatedObservations
+        );
     }
 
     public function schemaVersion(): int
@@ -111,7 +138,9 @@ final class Series
 
     public function observationCount(): int
     {
-        return count($this->observations);
+        return count(
+            $this->observations
+        );
     }
 
     public function isEmpty(): bool
@@ -173,14 +202,7 @@ final class Series
         if (
             !in_array(
                 $frequency,
-                [
-                    'daily',
-                    'weekly',
-                    'monthly',
-                    'quarterly',
-                    'annual',
-                    'irregular',
-                ],
+                self::FREQUENCIES,
                 true
             )
         ) {
