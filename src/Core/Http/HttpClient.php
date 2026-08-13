@@ -17,48 +17,40 @@ final class HttpClient
         'MacroRisk/2.0 (+https://github.com/vladraven/system)';
 
     public function __construct(
-        private readonly int $connectTimeout = self::DEFAULT_CONNECT_TIMEOUT,
-        private readonly int $timeout = self::DEFAULT_TIMEOUT,
-        private readonly int $maxResponseBytes = self::DEFAULT_MAX_RESPONSE_BYTES
+        private readonly HttpTransport $transport
     ) {
-        if ($connectTimeout < 1) {
-            throw new RuntimeException(
-                'HTTP connect timeout must be greater than zero.'
-            );
-        }
+    }
 
-        if ($timeout < 1) {
-            throw new RuntimeException(
-                'HTTP timeout must be greater than zero.'
-            );
-        }
-
-        if ($timeout < $connectTimeout) {
-            throw new RuntimeException(
-                'HTTP timeout cannot be smaller than connect timeout.'
-            );
-        }
-
-        if ($maxResponseBytes < 1) {
-            throw new RuntimeException(
-                'HTTP maximum response size must be greater than zero.'
-            );
-        }
+    public static function production(
+        int $connectTimeout = self::DEFAULT_CONNECT_TIMEOUT,
+        int $timeout = self::DEFAULT_TIMEOUT,
+        int $maxResponseBytes = self::DEFAULT_MAX_RESPONSE_BYTES
+    ): self {
+        return new self(
+            new CurlHttpTransport(
+                $connectTimeout,
+                $timeout,
+                $maxResponseBytes
+            )
+        );
     }
 
     public function getJson(string $url): array
     {
-        $response = $this->request(
+        $response = $this->transport->request(
             'GET',
             $url,
             [
                 'Accept: application/json',
+                'User-Agent: ' . self::USER_AGENT,
             ]
         );
 
+        $this->assertSuccessfulResponse($response);
+
         try {
             $decoded = json_decode(
-                $response['body'],
+                $response->body,
                 true,
                 512,
                 JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING
@@ -98,19 +90,22 @@ final class HttpClient
             );
         }
 
-        $response = $this->request(
+        $response = $this->transport->request(
             'POST',
             $url,
             [
                 'Accept: application/json',
                 'Content-Type: application/json',
+                'User-Agent: ' . self::USER_AGENT,
             ],
             $body
         );
 
+        $this->assertSuccessfulResponse($response);
+
         try {
             $decoded = json_decode(
-                $response['body'],
+                $response->body,
                 true,
                 512,
                 JSON_THROW_ON_ERROR | JSON_BIGINT_AS_STRING
@@ -134,158 +129,26 @@ final class HttpClient
 
     public function get(string $url): string
     {
-        $response = $this->request(
+        $response = $this->transport->request(
             'GET',
             $url,
             [
                 'Accept: application/json',
+                'User-Agent: ' . self::USER_AGENT,
             ]
         );
 
-        return $response['body'];
+        $this->assertSuccessfulResponse($response);
+
+        return $response->body;
     }
 
-    private function request(
-        string $method,
-        string $url,
-        array $headers,
-        ?string $body = null
-    ): array {
-        $this->assertUrl($url);
-
-        if (!function_exists('curl_init')) {
+    private function assertSuccessfulResponse(
+        HttpResponse $response
+    ): void {
+        if ($response->status < 200 || $response->status >= 300) {
             throw new RuntimeException(
-                'ext-curl is required.'
-            );
-        }
-
-        $handle = curl_init($url);
-
-        if ($handle === false) {
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: unable to initialize cURL.'
-            );
-        }
-
-        $requestHeaders = array_merge(
-            [
-                'User-Agent: ' . self::USER_AGENT,
-            ],
-            $headers
-        );
-
-        $options = [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_CONNECTTIMEOUT => $this->connectTimeout,
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_HTTPHEADER => $requestHeaders,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_CUSTOMREQUEST => $method,
-        ];
-
-        if ($method === 'POST') {
-            $options[CURLOPT_POST] = true;
-            $options[CURLOPT_POSTFIELDS] = $body ?? '';
-        }
-
-        if (!curl_setopt_array($handle, $options)) {
-            curl_close($handle);
-
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: unable to configure cURL.'
-            );
-        }
-
-        $response = curl_exec($handle);
-
-        if ($response === false) {
-            $error = curl_error($handle);
-
-            curl_close($handle);
-
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: ' . $error
-            );
-        }
-
-        $status = curl_getinfo(
-            $handle,
-            CURLINFO_RESPONSE_CODE
-        );
-
-        $contentLength = curl_getinfo(
-            $handle,
-            CURLINFO_CONTENT_LENGTH_DOWNLOAD
-        );
-
-        curl_close($handle);
-
-        if (
-            is_int($contentLength)
-            && $contentLength > $this->maxResponseBytes
-        ) {
-            throw new RuntimeException(
-                'SOURCE_RESPONSE_TOO_LARGE: response exceeds maximum size.'
-            );
-        }
-
-        if (!is_string($response)) {
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: invalid cURL response.'
-            );
-        }
-
-        if (strlen($response) > $this->maxResponseBytes) {
-            throw new RuntimeException(
-                'SOURCE_RESPONSE_TOO_LARGE: response exceeds maximum size.'
-            );
-        }
-
-        if ($status < 200 || $status >= 300) {
-            throw new RuntimeException(
-                "SOURCE_HTTP_ERROR: HTTP {$status}"
-            );
-        }
-
-        return [
-            'status' => $status,
-            'body' => $response,
-        ];
-    }
-
-    private function assertUrl(string $url): void
-    {
-        if ($url === '') {
-            throw new RuntimeException(
-                'HTTP URL cannot be empty.'
-            );
-        }
-
-        $parts = parse_url($url);
-
-        if ($parts === false) {
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: invalid URL.'
-            );
-        }
-
-        if (
-            !isset($parts['scheme'])
-            || strtolower($parts['scheme']) !== 'https'
-        ) {
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: HTTPS is required.'
-            );
-        }
-
-        if (
-            !isset($parts['host'])
-            || $parts['host'] === ''
-        ) {
-            throw new RuntimeException(
-                'SOURCE_TRANSPORT_ERROR: URL host is required.'
+                "SOURCE_HTTP_ERROR: HTTP {$response->status}"
             );
         }
     }

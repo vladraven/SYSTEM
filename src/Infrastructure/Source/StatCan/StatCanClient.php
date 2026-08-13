@@ -29,17 +29,10 @@ final class StatCanClient
     ): array {
         $productId = trim($productId);
 
-        if ($productId === '') {
-            throw new RuntimeException(
-                'StatCan product ID cannot be empty.'
-            );
-        }
-
-        if (!preg_match('/^\d+$/', $productId)) {
-            throw new RuntimeException(
-                "Invalid StatCan product ID: {$productId}"
-            );
-        }
+        self::assertNumericId(
+            $productId,
+            'product'
+        );
 
         return $this->get(
             '/getFullTableDownloadList/' . $productId
@@ -51,17 +44,10 @@ final class StatCanClient
     ): array {
         $productId = trim($productId);
 
-        if ($productId === '') {
-            throw new RuntimeException(
-                'StatCan product ID cannot be empty.'
-            );
-        }
-
-        if (!preg_match('/^\d+$/', $productId)) {
-            throw new RuntimeException(
-                "Invalid StatCan product ID: {$productId}"
-            );
-        }
+        self::assertNumericId(
+            $productId,
+            'product'
+        );
 
         return $this->get(
             '/getBulkDownloadFileList/' . $productId
@@ -73,17 +59,10 @@ final class StatCanClient
     ): array {
         $vectorId = trim($vectorId);
 
-        if ($vectorId === '') {
-            throw new RuntimeException(
-                'StatCan vector ID cannot be empty.'
-            );
-        }
-
-        if (!preg_match('/^\d+$/', $vectorId)) {
-            throw new RuntimeException(
-                "Invalid StatCan vector ID: {$vectorId}"
-            );
-        }
+        self::assertNumericId(
+            $vectorId,
+            'vector'
+        );
 
         return $this->get(
             '/getSeriesInfoFromVectorByReferencePeriod'
@@ -100,18 +79,20 @@ final class StatCanClient
         $startReferencePeriod = trim($startReferencePeriod);
         $endReferencePeriod = trim($endReferencePeriod);
 
-        self::assertVectorId($vectorId);
+        self::assertNumericId(
+            $vectorId,
+            'vector'
+        );
+
         self::assertReferencePeriod(
             $startReferencePeriod
         );
+
         self::assertReferencePeriod(
             $endReferencePeriod
         );
 
-        if (
-            $startReferencePeriod
-            > $endReferencePeriod
-        ) {
+        if ($startReferencePeriod > $endReferencePeriod) {
             throw new RuntimeException(
                 'StatCan start reference period cannot be after end reference period.'
             );
@@ -132,8 +113,14 @@ final class StatCanClient
         $vectorId = trim($vectorId);
         $referencePeriod = trim($referencePeriod);
 
-        self::assertVectorId($vectorId);
-        self::assertReferencePeriod($referencePeriod);
+        self::assertNumericId(
+            $vectorId,
+            'vector'
+        );
+
+        self::assertReferencePeriod(
+            $referencePeriod
+        );
 
         return $this->get(
             '/getDataFromVectorByReferencePeriod'
@@ -144,25 +131,26 @@ final class StatCanClient
 
     private function get(string $path): array
     {
-        $path = '/' . ltrim($path, '/');
-
         return $this->http->getJson(
-            self::BASE_URL . $path
+            self::BASE_URL
+            . '/'
+            . ltrim($path, '/')
         );
     }
 
-    private static function assertVectorId(
-        string $vectorId
+    private static function assertNumericId(
+        string $value,
+        string $type
     ): void {
-        if ($vectorId === '') {
+        if ($value === '') {
             throw new RuntimeException(
-                'StatCan vector ID cannot be empty.'
+                "StatCan {$type} ID cannot be empty."
             );
         }
 
-        if (!preg_match('/^\d+$/', $vectorId)) {
+        if (!preg_match('/^\d+$/', $value)) {
             throw new RuntimeException(
-                "Invalid StatCan vector ID: {$vectorId}"
+                "Invalid StatCan {$type} ID: {$value}"
             );
         }
     }

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use MacroRisk\Core\Http\HttpClient;
+use MacroRisk\Core\Http\HttpResponse;
+use MacroRisk\Core\Http\HttpTransport;
 use MacroRisk\Infrastructure\Source\StatCan\StatCanClient;
 use RuntimeException;
 
@@ -25,12 +27,29 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
-function assertTrueValue(
-    bool $condition,
-    string $message
-): void {
-    if (!$condition) {
-        throw new RuntimeException($message);
+final class FakeHttpTransport implements HttpTransport
+{
+    public array $requests = [];
+
+    public function __construct(
+        private readonly HttpResponse $response
+    ) {
+    }
+
+    public function request(
+        string $method,
+        string $url,
+        array $headers = [],
+        ?string $body = null
+    ): HttpResponse {
+        $this->requests[] = [
+            'method' => $method,
+            'url' => $url,
+            'headers' => $headers,
+            'body' => $body,
+        ];
+
+        return $this->response;
     }
 }
 
@@ -47,6 +66,15 @@ function assertSameValue(
             . PHP_EOL
             . 'Actual: ' . var_export($actual, true)
         );
+    }
+}
+
+function assertTrueValue(
+    bool $condition,
+    string $message
+): void {
+    if (!$condition) {
+        throw new RuntimeException($message);
     }
 }
 
@@ -82,15 +110,21 @@ function assertThrows(
     );
 }
 
-$client = new StatCanClient(
-    new HttpClient()
-);
+function createClient(
+    FakeHttpTransport $transport
+): StatCanClient {
+    return new StatCanClient(
+        new HttpClient($transport)
+    );
+}
 
 $tests = [
     'empty product id is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -99,12 +133,20 @@ $tests = [
             },
             'Empty product ID must be rejected.'
         );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
+        );
     },
 
     'non numeric product id is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -113,26 +155,42 @@ $tests = [
             },
             'Non-numeric product ID must be rejected.'
         );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
+        );
     },
 
-    'empty bulk product id is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+    'bulk product id is validated' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
             static function () use ($client): void {
-                $client->getBulkDownloadFileList('');
+                $client->getBulkDownloadFileList('abc');
             },
-            'Empty product ID must be rejected.'
+            'Non-numeric bulk product ID must be rejected.'
+        );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
         );
     },
 
     'empty vector id is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -141,12 +199,20 @@ $tests = [
             },
             'Empty vector ID must be rejected.'
         );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
+        );
     },
 
     'non numeric vector id is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -155,12 +221,20 @@ $tests = [
             },
             'Non-numeric vector ID must be rejected.'
         );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
+        );
     },
 
     'empty reference period is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -175,9 +249,11 @@ $tests = [
     },
 
     'invalid reference period is rejected' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -191,10 +267,12 @@ $tests = [
         );
     },
 
-    'start reference period cannot exceed end period' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+    'start period cannot exceed end period' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
         );
+
+        $client = createClient($transport);
 
         assertThrows(
             RuntimeException::class,
@@ -205,76 +283,175 @@ $tests = [
                     '2026-01'
                 );
             },
-            'Start reference period must not exceed end reference period.'
+            'Start period must not exceed end period.'
+        );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid range must not reach HTTP transport.'
         );
     },
 
-    'year reference period is accepted' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient(
-                1,
-                1
+    'changed series endpoint is constructed correctly' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"status":"ok","results":[]}'
             )
         );
 
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getDataFromVectorByReferencePeriod(
-                    '12345',
-                    '2026'
-                );
-            },
-            'Valid input must pass local validation before transport.'
-        );
-    },
-
-    'monthly reference period is accepted' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient(
-                1,
-                1
-            )
-        );
-
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getDataFromVectorByReferencePeriod(
-                    '12345',
-                    '2026-01'
-                );
-            },
-            'Valid monthly period must pass local validation before transport.'
-        );
-    },
-
-    'real StatCan WDS endpoint returns an array' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
-        );
+        $client = createClient($transport);
 
         $result = $client->getChangedSeriesList();
 
-        assertTrueValue(
-            is_array($result),
-            'StatCan WDS response must be an array.'
+        assertSameValue(
+            [
+                'status' => 'ok',
+                'results' => [],
+            ],
+            $result,
+            'StatCan response must be returned unchanged after JSON decoding.'
+        );
+
+        assertSameValue(
+            'GET',
+            $transport->requests[0]['method'],
+            'StatCan requests must use GET.'
+        );
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getChangedSeriesList',
+            $transport->requests[0]['url'],
+            'Changed series URL is incorrect.'
         );
     },
 
-    'real StatCan vector endpoint returns an array' => static function (): void {
-        $client = new StatCanClient(
-            new HttpClient()
+    'full table endpoint is constructed correctly' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{"results":[]}')
         );
 
-        $result = $client->getDataFromVectorByReferencePeriod(
+        $client = createClient($transport);
+
+        $client->getFullTableDownloadList('36100287');
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadList/36100287',
+            $transport->requests[0]['url'],
+            'Full table URL is incorrect.'
+        );
+    },
+
+    'bulk download endpoint is constructed correctly' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{"results":[]}')
+        );
+
+        $client = createClient($transport);
+
+        $client->getBulkDownloadFileList('36100287');
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getBulkDownloadFileList/36100287',
+            $transport->requests[0]['url'],
+            'Bulk download URL is incorrect.'
+        );
+    },
+
+    'series info endpoint is constructed correctly' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{"results":[]}')
+        );
+
+        $client = createClient($transport);
+
+        $client->getSeriesInfo('41690973');
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getSeriesInfoFromVectorByReferencePeriod/41690973',
+            $transport->requests[0]['url'],
+            'Series info URL is incorrect.'
+        );
+    },
+
+    'single period endpoint is constructed correctly' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{"results":[]}')
+        );
+
+        $client = createClient($transport);
+
+        $client->getDataFromVectorByReferencePeriod(
             '41690973',
-            '2025-01'
+            '2026-01'
         );
 
-        assertTrueValue(
-            is_array($result),
-            'StatCan vector response must be an array.'
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriod/41690973/2026-01',
+            $transport->requests[0]['url'],
+            'Single-period URL is incorrect.'
+        );
+    },
+
+    'range endpoint is constructed correctly' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{"results":[]}')
+        );
+
+        $client = createClient($transport);
+
+        $client->getDataFromVectorByReferencePeriodRange(
+            '41690973',
+            '2025-01',
+            '2026-01'
+        );
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange/41690973/2025-01/2026-01',
+            $transport->requests[0]['url'],
+            'Range URL is incorrect.'
+        );
+    },
+
+    'unicode and large integers survive transport decoding' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"title":"Канада","identifier":92233720368547758079223372036854775807}'
+            )
+        );
+
+        $client = createClient($transport);
+
+        $result = $client->getChangedSeriesList();
+
+        assertSameValue(
+            'Канада',
+            $result['title'],
+            'Unicode response data must be preserved.'
+        );
+
+        assertSameValue(
+            '92233720368547758079223372036854775807',
+            $result['identifier'],
+            'Large integer response data must remain exact.'
+        );
+    },
+
+    'HTTP errors are propagated' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(404, '{"error":"not found"}')
+        );
+
+        $client = createClient($transport);
+
+        assertThrows(
+            RuntimeException::class,
+            static function () use ($client): void {
+                $client->getChangedSeriesList();
+            },
+            'HTTP errors must not be returned as valid StatCan data.'
         );
     },
 ];
