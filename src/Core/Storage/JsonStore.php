@@ -9,6 +9,16 @@ use RuntimeException;
 
 final class JsonStore
 {
+    private const JSON_ENCODE_FLAGS =
+        JSON_THROW_ON_ERROR
+        | JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
+        | JSON_PRETTY_PRINT;
+
+    private const JSON_DECODE_FLAGS =
+        JSON_THROW_ON_ERROR
+        | JSON_BIGINT_AS_STRING;
+
     public function __construct(
         private readonly AtomicJsonFile $storage
     ) {
@@ -23,10 +33,7 @@ final class JsonStore
         try {
             $json = json_encode(
                 $data,
-                JSON_THROW_ON_ERROR
-                | JSON_UNESCAPED_UNICODE
-                | JSON_UNESCAPED_SLASHES
-                | JSON_PRETTY_PRINT
+                self::JSON_ENCODE_FLAGS
             );
         } catch (JsonException $exception) {
             throw new RuntimeException(
@@ -55,7 +62,7 @@ final class JsonStore
                 $json,
                 true,
                 512,
-                JSON_THROW_ON_ERROR
+                self::JSON_DECODE_FLAGS
             );
         } catch (JsonException $exception) {
             throw new RuntimeException(

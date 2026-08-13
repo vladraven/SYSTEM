@@ -230,24 +230,41 @@ JSON;
                 $data
             );
 
+            assertSameValue(
+                $data,
+                $store->read('data.json'),
+                'Decimal values must remain strings.'
+            );
+        } finally {
+            removeDirectory($directory);
+        }
+    },
+
+    'large JSON integers are preserved as strings' => static function (): void {
+        $directory = createTemporaryDirectory();
+
+        try {
+            $storage = new AtomicJsonFile($directory);
+
+            $storage->write(
+                'data.json',
+                '{"identifier":92233720368547758079223372036854775807}'
+            );
+
+            $store = new JsonStore($storage);
+
             $result = $store->read('data.json');
 
             assertSameValue(
-                $data,
-                $result,
-                'Decimal values must remain strings.'
+                '92233720368547758079223372036854775807',
+                $result['identifier'],
+                'Large JSON integers must not lose precision.'
             );
 
             assertSameValue(
-                '0.12345678',
-                $result['raw'],
-                'Raw decimal must remain a string.'
-            );
-
-            assertSameValue(
-                '0.1235',
-                $result['score'],
-                'Score decimal must remain a string.'
+                'string',
+                get_debug_type($result['identifier']),
+                'Large JSON integers must be represented as strings.'
             );
         } finally {
             removeDirectory($directory);
