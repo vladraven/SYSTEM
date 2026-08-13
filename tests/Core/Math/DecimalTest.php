@@ -96,13 +96,13 @@ $tests = [
         );
     },
 
-    'score values use score scale' => static function (): void {
+    'score values round to score scale' => static function (): void {
         $value = Decimal::score('12.34567');
 
         assertSameValue(
             '12.3457',
             $value->toString(),
-            'Score decimal must normalize to four decimal places.'
+            'Score decimal must round to four decimal places.'
         );
 
         assertSameValue(
@@ -284,6 +284,20 @@ $tests = [
         );
     },
 
+    'rounding carries into integer part' => static function (): void {
+        assertSameValue(
+            '2.00',
+            Decimal::raw('1.99999999')->rounded(2)->toString(),
+            'Rounding must carry into the integer part.'
+        );
+
+        assertSameValue(
+            '-2.00',
+            Decimal::raw('-1.99999999')->rounded(2)->toString(),
+            'Negative rounding must carry into the integer part.'
+        );
+    },
+
     'rounding to greater scale does not change numeric value' => static function (): void {
         $value = Decimal::score('12.3456');
 
@@ -302,19 +316,37 @@ $tests = [
         );
     },
 
-    'withScale changes representation without float conversion' => static function (): void {
+    'withScale rounds when reducing scale' => static function (): void {
         $value = Decimal::raw('12.34567890');
 
         $result = $value->withScale(4);
 
         assertSameValue(
-            '12.3456',
+            '12.3457',
             $result->toString(),
-            'withScale must normalize through BCMath.'
+            'Reducing scale must use Round Half Away From Zero.'
         );
 
         assertSameValue(
             4,
+            $result->scale(),
+            'withScale must use the requested scale.'
+        );
+    },
+
+    'withScale preserves value when increasing scale' => static function (): void {
+        $value = Decimal::score('12.3456');
+
+        $result = $value->withScale(8);
+
+        assertSameValue(
+            '12.34560000',
+            $result->toString(),
+            'Increasing scale must preserve the numeric value.'
+        );
+
+        assertSameValue(
+            8,
             $result->scale(),
             'withScale must use the requested scale.'
         );
