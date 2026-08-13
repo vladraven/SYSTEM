@@ -490,6 +490,40 @@ $tests = [
         );
     },
 
+    'weights with more than four decimal places sum exactly' => static function (): void {
+        $configuration = new Configuration(
+            '2026.1',
+            [
+                'policy_rate' => '40.000000000000000001',
+                'unemployment_rate' => '35.000000000000000001',
+                'housing_starts' => '24.999999999999999998',
+            ],
+            [],
+            [],
+            '60.0000',
+            3,
+            [
+                'very_low' => '20.0000',
+                'low' => '40.0000',
+                'moderate' => '60.0000',
+                'high' => '80.0000',
+                'severe' => '100.0000',
+            ]
+        );
+
+        assertSameValue(
+            '40.000000000000000001',
+            $configuration->originalWeightFor('policy_rate'),
+            'High precision weight must be preserved exactly.'
+        );
+
+        assertSameValue(
+            '24.999999999999999998',
+            $configuration->originalWeightFor('housing_starts'),
+            'High precision weight must be preserved exactly.'
+        );
+    },
+
     'decimal strings are preserved exactly' => static function (): void {
         $configuration = new Configuration(
             '2026.1',
@@ -505,11 +539,11 @@ $tests = [
             '60.000000000000000001',
             3,
             [
-                'very_low' => '20.000000000000000001',
-                'low' => '40.000000000000000001',
-                'moderate' => '60.000000000000000001',
-                'high' => '80.000000000000000001',
-                'severe' => '100.000000000000000001',
+                'very_low' => '20.0000',
+                'low' => '40.0000',
+                'moderate' => '60.0000',
+                'high' => '80.0000',
+                'severe' => '100.0000',
             ]
         );
 
@@ -523,6 +557,12 @@ $tests = [
             '0.900000000000000001',
             $configuration->frequencyDiscountFor('monthly'),
             'Frequency decimal string must be preserved.'
+        );
+
+        assertSameValue(
+            '60.000000000000000001',
+            $configuration->coverageThreshold(),
+            'Coverage threshold decimal string must be preserved.'
         );
     },
 

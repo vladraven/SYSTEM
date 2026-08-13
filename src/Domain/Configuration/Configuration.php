@@ -28,9 +28,16 @@ final class Configuration
     ];
 
     private array $originalWeights;
+
     private array $normalizations;
+
     private array $frequencyDiscounts;
+
     private array $riskBandThresholds;
+
+    private readonly string $coverageThreshold;
+
+    private readonly int $minimumEligibleIndicators;
 
     public function __construct(
         private readonly string $configurationVersion,
@@ -51,13 +58,23 @@ final class Configuration
             'coverage threshold'
         );
 
-        if (bccomp($coverageThreshold, '0.0000', 4) < 0) {
+        if (
+            self::compareDecimals(
+                $coverageThreshold,
+                '0.0000'
+            ) < 0
+        ) {
             throw new RuntimeException(
                 'Coverage threshold cannot be negative.'
             );
         }
 
-        if (bccomp($coverageThreshold, '100.0000', 4) > 0) {
+        if (
+            self::compareDecimals(
+                $coverageThreshold,
+                '100.0000'
+            ) > 0
+        ) {
             throw new RuntimeException(
                 'Coverage threshold cannot exceed 100.0000.'
             );
@@ -88,10 +105,6 @@ final class Configuration
         $this->coverageThreshold = $coverageThreshold;
         $this->minimumEligibleIndicators = $minimumEligibleIndicators;
     }
-
-    private readonly string $coverageThreshold;
-
-    private readonly int $minimumEligibleIndicators;
 
     public function configurationVersion(): string
     {
@@ -167,6 +180,9 @@ final class Configuration
         return $this->riskBandThresholds[$band] ?? null;
     }
 
+    /**
+     * @return array<string, string>
+     */
     private static function validateOriginalWeights(
         array $weights
     ): array {
@@ -194,7 +210,12 @@ final class Configuration
                 "original weight for {$indicatorKey}"
             );
 
-            if (bccomp($weight, '0.0000', 4) < 0) {
+            if (
+                self::compareDecimals(
+                    $weight,
+                    '0.0000'
+                ) < 0
+            ) {
                 throw new RuntimeException(
                     "Original weight for {$indicatorKey} cannot be negative."
                 );
@@ -203,17 +224,35 @@ final class Configuration
             $normalized[$indicatorKey] = $weight;
         }
 
-        $sum = '0.0000';
+        $scale = self::maximumDecimalScale(
+            array_values($normalized)
+        );
+
+        $sum = self::formatDecimal(
+            '0',
+            $scale
+        );
 
         foreach ($normalized as $weight) {
             $sum = bcadd(
                 $sum,
                 $weight,
-                4
+                $scale
             );
         }
 
-        if (bccomp($sum, '100.0000', 4) !== 0) {
+        $expected = self::formatDecimal(
+            '100',
+            $scale
+        );
+
+        if (
+            bccomp(
+                $sum,
+                $expected,
+                $scale
+            ) !== 0
+        ) {
             throw new RuntimeException(
                 "Original weights must sum exactly to 100.0000. Actual: {$sum}"
             );
@@ -222,6 +261,9 @@ final class Configuration
         return $normalized;
     }
 
+    /**
+     * @return array<string, array<string, string>>
+     */
     private static function validateNormalizations(
         array $normalizations
     ): array {
@@ -329,10 +371,9 @@ final class Configuration
                 }
 
                 if (
-                    bccomp(
+                    self::compareDecimals(
                         $rule['low'],
-                        $rule['high'],
-                        8
+                        $rule['high']
                     ) === 0
                 ) {
                     throw new RuntimeException(
@@ -352,10 +393,9 @@ final class Configuration
                 }
 
                 if (
-                    bccomp(
+                    self::compareDecimals(
                         $rule['max_deviation'],
-                        '0.00000000',
-                        8
+                        '0'
                     ) <= 0
                 ) {
                     throw new RuntimeException(
@@ -382,20 +422,17 @@ final class Configuration
                 }
 
                 if (
-                    bccomp(
+                    self::compareDecimals(
                         $rule['outside_min'],
-                        $rule['safe_min'],
-                        8
+                        $rule['safe_min']
                     ) >= 0
-                    || bccomp(
+                    || self::compareDecimals(
                         $rule['safe_min'],
-                        $rule['safe_max'],
-                        8
+                        $rule['safe_max']
                     ) >= 0
-                    || bccomp(
+                    || self::compareDecimals(
                         $rule['safe_max'],
-                        $rule['outside_max'],
-                        8
+                        $rule['outside_max']
                     ) >= 0
                 ) {
                     throw new RuntimeException(
@@ -407,6 +444,9 @@ final class Configuration
         }
     }
 
+    /**
+     * @return array<string, string>
+     */
     private static function validateFrequencyDiscounts(
         array $discounts
     ): array {
@@ -431,8 +471,14 @@ final class Configuration
             );
 
             if (
-                bccomp($discount, '0.0000', 4) < 0
-                || bccomp($discount, '1.0000', 4) > 0
+                self::compareDecimals(
+                    $discount,
+                    '0'
+                ) < 0
+                || self::compareDecimals(
+                    $discount,
+                    '1'
+                ) > 0
             ) {
                 throw new RuntimeException(
                     "Frequency discount for {$frequency} must be between 0.0000 and 1.0000."
@@ -445,6 +491,9 @@ final class Configuration
         return $normalized;
     }
 
+    /**
+     * @return array<string, string>
+     */
     private static function validateRiskBandThresholds(
         array $thresholds
     ): array {
@@ -473,15 +522,13 @@ final class Configuration
             );
 
             if (
-                bccomp(
+                self::compareDecimals(
                     $thresholds[$band],
-                    '0.0000',
-                    4
+                    '0'
                 ) < 0
-                || bccomp(
+                || self::compareDecimals(
                     $thresholds[$band],
-                    '100.0000',
-                    4
+                    '100'
                 ) > 0
             ) {
                 throw new RuntimeException(
@@ -498,12 +545,16 @@ final class Configuration
             'severe',
         ];
 
-        for ($i = 1, $count = count($ordered); $i < $count; $i++) {
+        for (
+            $i = 1,
+            $count = count($ordered);
+            $i < $count;
+            $i++
+        ) {
             if (
-                bccomp(
+                self::compareDecimals(
                     $thresholds[$ordered[$i - 1]],
-                    $thresholds[$ordered[$i]],
-                    4
+                    $thresholds[$ordered[$i]]
                 ) >= 0
             ) {
                 throw new RuntimeException(
@@ -563,5 +614,83 @@ final class Configuration
                 "{$field} must be a decimal string."
             );
         }
+    }
+
+    private static function compareDecimals(
+        string $left,
+        string $right
+    ): int {
+        $scale = max(
+            self::decimalScale($left),
+            self::decimalScale($right)
+        );
+
+        return bccomp(
+            $left,
+            $right,
+            $scale
+        );
+    }
+
+    /**
+     * @param array<int, string> $values
+     */
+    private static function maximumDecimalScale(
+        array $values
+    ): int {
+        $scale = 0;
+
+        foreach ($values as $value) {
+            $scale = max(
+                $scale,
+                self::decimalScale($value)
+            );
+        }
+
+        return $scale;
+    }
+
+    private static function decimalScale(
+        string $value
+    ): int {
+        $position = strpos(
+            $value,
+            '.'
+        );
+
+        if ($position === false) {
+            return 0;
+        }
+
+        return strlen($value) - $position - 1;
+    }
+
+    private static function formatDecimal(
+        string $value,
+        int $scale
+    ): string {
+        if ($scale === 0) {
+            return $value;
+        }
+
+        if (strpos($value, '.') === false) {
+            return $value . '.' . str_repeat(
+                '0',
+                $scale
+            );
+        }
+
+        $currentScale = self::decimalScale(
+            $value
+        );
+
+        if ($currentScale >= $scale) {
+            return $value;
+        }
+
+        return $value . str_repeat(
+            '0',
+            $scale - $currentScale
+        );
     }
 }
