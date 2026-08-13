@@ -8,6 +8,14 @@ use RuntimeException;
 
 final class Configuration
 {
+    private const RISK_BANDS = [
+        'very_low',
+        'low',
+        'moderate',
+        'high',
+        'severe',
+    ];
+
     private const NORMALIZATION_METHODS = [
         'threshold_linear',
         'distance_from_target_is_riskier',
@@ -19,38 +27,45 @@ final class Configuration
         'lower_is_riskier',
     ];
 
-    private const RISK_BANDS = [
-        'very_low',
-        'low',
-        'moderate',
-        'high',
-        'severe',
+    private const FREQUENCIES = [
+        'daily',
+        'weekly',
+        'monthly',
+        'quarterly',
+        'annual',
+        'irregular',
     ];
 
-    private array $originalWeights;
-
-    private array $normalizations;
-
-    private array $frequencyDiscounts;
-
-    private array $riskBandThresholds;
-
-    private readonly string $coverageThreshold;
-
-    private readonly int $minimumEligibleIndicators;
+    private readonly array $originalWeights;
+    private readonly array $normalizations;
+    private readonly array $frequencyDiscounts;
+    private readonly array $riskBandThresholds;
 
     public function __construct(
         private readonly string $configurationVersion,
         array $originalWeights,
         array $normalizations,
         array $frequencyDiscounts,
-        string $coverageThreshold = '60.0000',
-        int $minimumEligibleIndicators = 3,
-        array $riskBandThresholds = []
+        private readonly string $coverageThreshold,
+        private readonly int $minimumEligibleIndicators,
+        array $riskBandThresholds
     ) {
         self::assertIdentifier(
             $configurationVersion,
             'configuration version'
+        );
+
+        $this->originalWeights = self::validateOriginalWeights(
+            $originalWeights
+        );
+
+        $this->normalizations = self::validateNormalizations(
+            $normalizations,
+            $this->originalWeights
+        );
+
+        $this->frequencyDiscounts = self::validateFrequencyDiscounts(
+            $frequencyDiscounts
         );
 
         self::assertDecimal(
@@ -61,49 +76,27 @@ final class Configuration
         if (
             self::compareDecimals(
                 $coverageThreshold,
-                '0.0000'
+                '0'
             ) < 0
-        ) {
-            throw new RuntimeException(
-                'Coverage threshold cannot be negative.'
-            );
-        }
-
-        if (
-            self::compareDecimals(
+            || self::compareDecimals(
                 $coverageThreshold,
-                '100.0000'
+                '100'
             ) > 0
         ) {
             throw new RuntimeException(
-                'Coverage threshold cannot exceed 100.0000.'
+                'Coverage threshold must be between 0.0000 and 100.0000.'
             );
         }
 
-        if ($minimumEligibleIndicators < 1) {
+        if ($minimumEligibleIndicators <= 0) {
             throw new RuntimeException(
-                'Minimum eligible indicators must be positive.'
+                'Minimum eligible indicator count must be positive.'
             );
         }
-
-        $this->originalWeights = self::validateOriginalWeights(
-            $originalWeights
-        );
-
-        $this->normalizations = self::validateNormalizations(
-            $normalizations
-        );
-
-        $this->frequencyDiscounts = self::validateFrequencyDiscounts(
-            $frequencyDiscounts
-        );
 
         $this->riskBandThresholds = self::validateRiskBandThresholds(
             $riskBandThresholds
         );
-
-        $this->coverageThreshold = $coverageThreshold;
-        $this->minimumEligibleIndicators = $minimumEligibleIndicators;
     }
 
     public function configurationVersion(): string
@@ -121,9 +114,6 @@ final class Configuration
         return $this->minimumEligibleIndicators;
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function originalWeights(): array
     {
         return $this->originalWeights;
@@ -135,26 +125,17 @@ final class Configuration
         return $this->originalWeights[$indicatorKey] ?? null;
     }
 
-    /**
-     * @return array<string, array<string, string>>
-     */
     public function normalizations(): array
     {
         return $this->normalizations;
     }
 
-    /**
-     * @return array<string, string>|null
-     */
     public function normalizationFor(
         string $indicatorKey
     ): ?array {
         return $this->normalizations[$indicatorKey] ?? null;
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function frequencyDiscounts(): array
     {
         return $this->frequencyDiscounts;
@@ -162,27 +143,21 @@ final class Configuration
 
     public function frequencyDiscountFor(
         string $frequency
-    ): ?string {
-        return $this->frequencyDiscounts[$frequency] ?? null;
+    ): string {
+        return $this->frequencyDiscounts[$frequency] ?? '1.0000';
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function riskBandThresholds(): array
     {
         return $this->riskBandThresholds;
     }
 
     public function riskBandThresholdFor(
-        string $band
+        string $riskBand
     ): ?string {
-        return $this->riskBandThresholds[$band] ?? null;
+        return $this->riskBandThresholds[$riskBand] ?? null;
     }
 
-    /**
-     * @return array<string, string>
-     */
     private static function validateOriginalWeights(
         array $weights
     ): array {
@@ -192,7 +167,7 @@ final class Configuration
             );
         }
 
-        $normalized = [];
+        $validated = [];
 
         foreach ($weights as $indicatorKey => $weight) {
             self::assertIndicatorKey(
@@ -207,13 +182,13 @@ final class Configuration
 
             self::assertDecimal(
                 $weight,
-                "original weight for {$indicatorKey}"
+                "Original weight for {$indicatorKey}"
             );
 
             if (
                 self::compareDecimals(
                     $weight,
-                    '0.0000'
+                    '0'
                 ) < 0
             ) {
                 throw new RuntimeException(
@@ -221,36 +196,23 @@ final class Configuration
                 );
             }
 
-            $normalized[$indicatorKey] = $weight;
+            $validated[$indicatorKey] = $weight;
         }
 
-        $scale = self::maximumDecimalScale(
-            array_values($normalized)
-        );
+        $sum = '0';
 
-        $sum = self::formatDecimal(
-            '0',
-            $scale
-        );
-
-        foreach ($normalized as $weight) {
+        foreach ($validated as $weight) {
             $sum = bcadd(
                 $sum,
                 $weight,
-                $scale
+                self::decimalScale($weight)
             );
         }
 
-        $expected = self::formatDecimal(
-            '100',
-            $scale
-        );
-
         if (
-            bccomp(
+            self::compareDecimals(
                 $sum,
-                $expected,
-                $scale
+                '100'
             ) !== 0
         ) {
             throw new RuntimeException(
@@ -258,204 +220,241 @@ final class Configuration
             );
         }
 
-        return $normalized;
+        return $validated;
     }
 
-    /**
-     * @return array<string, array<string, string>>
-     */
     private static function validateNormalizations(
-        array $normalizations
+        array $normalizations,
+        array $originalWeights
     ): array {
-        $normalized = [];
+        foreach ($originalWeights as $indicatorKey => $_weight) {
+            if (!array_key_exists($indicatorKey, $normalizations)) {
+                throw new RuntimeException(
+                    "Normalization is required for weighted indicator: {$indicatorKey}"
+                );
+            }
+        }
 
-        foreach ($normalizations as $indicatorKey => $rule) {
+        foreach ($normalizations as $indicatorKey => $normalization) {
             self::assertIndicatorKey(
                 $indicatorKey
             );
 
-            if (!is_array($rule)) {
+            if (!array_key_exists($indicatorKey, $originalWeights)) {
                 throw new RuntimeException(
-                    "Normalization rule for {$indicatorKey} must be an array."
+                    "Normalization references unknown indicator: {$indicatorKey}"
                 );
             }
 
-            $method = $rule['method'] ?? null;
-
-            if (
-                !is_string($method)
-                || !in_array(
-                    $method,
-                    self::NORMALIZATION_METHODS,
-                    true
-                )
-            ) {
+            if (!is_array($normalization)) {
                 throw new RuntimeException(
-                    "Invalid normalization method for {$indicatorKey}."
+                    "Normalization for {$indicatorKey} must be an array."
                 );
             }
 
-            $direction = $rule['direction'] ?? null;
-
-            if (
-                !is_string($direction)
-                || !in_array(
-                    $direction,
-                    self::DIRECTIONS,
-                    true
-                )
-            ) {
-                throw new RuntimeException(
-                    "Invalid normalization direction for {$indicatorKey}."
-                );
-            }
-
-            $validated = [
-                'method' => $method,
-                'direction' => $direction,
-            ];
-
-            foreach (
-                [
-                    'low',
-                    'high',
-                    'target',
-                    'max_deviation',
-                    'safe_min',
-                    'safe_max',
-                    'outside_min',
-                    'outside_max',
-                ] as $field
-            ) {
-                if (!array_key_exists($field, $rule)) {
-                    continue;
-                }
-
-                if (!is_string($rule[$field])) {
-                    throw new RuntimeException(
-                        "Normalization {$field} for {$indicatorKey} must be a decimal string."
-                    );
-                }
-
-                self::assertDecimal(
-                    $rule[$field],
-                    "normalization {$field} for {$indicatorKey}"
-                );
-
-                $validated[$field] = $rule[$field];
-            }
-
-            self::validateNormalizationParameters(
+            self::validateNormalization(
                 $indicatorKey,
-                $validated
+                $normalization
             );
-
-            $normalized[$indicatorKey] = $validated;
         }
 
-        return $normalized;
+        return $normalizations;
     }
 
-    private static function validateNormalizationParameters(
+    private static function validateNormalization(
         string $indicatorKey,
-        array $rule
+        array $normalization
     ): void {
-        switch ($rule['method']) {
-            case 'threshold_linear':
-                foreach (['low', 'high'] as $field) {
-                    if (!isset($rule[$field])) {
-                        throw new RuntimeException(
-                            "Normalization {$field} is required for {$indicatorKey}."
-                        );
-                    }
-                }
+        if (
+            !isset($normalization['method'])
+            || !is_string($normalization['method'])
+        ) {
+            throw new RuntimeException(
+                "Normalization method is required for {$indicatorKey}."
+            );
+        }
 
-                if (
-                    self::compareDecimals(
-                        $rule['low'],
-                        $rule['high']
-                    ) === 0
-                ) {
-                    throw new RuntimeException(
-                        "Normalization low and high cannot be equal for {$indicatorKey}."
-                    );
-                }
+        $method = $normalization['method'];
 
-                break;
+        if (
+            !in_array(
+                $method,
+                self::NORMALIZATION_METHODS,
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                "Invalid normalization method for {$indicatorKey}: {$method}"
+            );
+        }
 
-            case 'distance_from_target_is_riskier':
-                foreach (['target', 'max_deviation'] as $field) {
-                    if (!isset($rule[$field])) {
-                        throw new RuntimeException(
-                            "Normalization {$field} is required for {$indicatorKey}."
-                        );
-                    }
-                }
+        if (
+            !isset($normalization['direction'])
+            || !is_string($normalization['direction'])
+        ) {
+            throw new RuntimeException(
+                "Normalization direction is required for {$indicatorKey}."
+            );
+        }
 
-                if (
-                    self::compareDecimals(
-                        $rule['max_deviation'],
-                        '0'
-                    ) <= 0
-                ) {
-                    throw new RuntimeException(
-                        "Normalization max_deviation must be positive for {$indicatorKey}."
-                    );
-                }
+        if (
+            !in_array(
+                $normalization['direction'],
+                self::DIRECTIONS,
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                "Invalid normalization direction for {$indicatorKey}: {$normalization['direction']}"
+            );
+        }
 
-                break;
+        match ($method) {
+            'threshold_linear' => self::validateThresholdNormalization(
+                $indicatorKey,
+                $normalization
+            ),
+            'distance_from_target_is_riskier' => self::validateDistanceNormalization(
+                $indicatorKey,
+                $normalization
+            ),
+            'outside_band_is_riskier' => self::validateOutsideBandNormalization(
+                $indicatorKey,
+                $normalization
+            ),
+        };
+    }
 
-            case 'outside_band_is_riskier':
-                foreach (
-                    [
-                        'safe_min',
-                        'safe_max',
-                        'outside_min',
-                        'outside_max',
-                    ] as $field
-                ) {
-                    if (!isset($rule[$field])) {
-                        throw new RuntimeException(
-                            "Normalization {$field} is required for {$indicatorKey}."
-                        );
-                    }
-                }
+    private static function validateThresholdNormalization(
+        string $indicatorKey,
+        array $normalization
+    ): void {
+        if (
+            !array_key_exists('low', $normalization)
+            || !array_key_exists('high', $normalization)
+        ) {
+            throw new RuntimeException(
+                "Threshold normalization for {$indicatorKey} requires low and high."
+            );
+        }
 
-                if (
-                    self::compareDecimals(
-                        $rule['outside_min'],
-                        $rule['safe_min']
-                    ) >= 0
-                    || self::compareDecimals(
-                        $rule['safe_min'],
-                        $rule['safe_max']
-                    ) >= 0
-                    || self::compareDecimals(
-                        $rule['safe_max'],
-                        $rule['outside_max']
-                    ) >= 0
-                ) {
-                    throw new RuntimeException(
-                        "Invalid outside-band boundaries for {$indicatorKey}."
-                    );
-                }
+        self::assertDecimal(
+            $normalization['low'],
+            "Threshold low for {$indicatorKey}"
+        );
 
-                break;
+        self::assertDecimal(
+            $normalization['high'],
+            "Threshold high for {$indicatorKey}"
+        );
+
+        if (
+            self::compareDecimals(
+                $normalization['low'],
+                $normalization['high']
+            ) >= 0
+        ) {
+            throw new RuntimeException(
+                "Threshold low must be less than high for {$indicatorKey}."
+            );
         }
     }
 
-    /**
-     * @return array<string, string>
-     */
+    private static function validateDistanceNormalization(
+        string $indicatorKey,
+        array $normalization
+    ): void {
+        if (
+            !array_key_exists('target', $normalization)
+            || !array_key_exists('max_deviation', $normalization)
+        ) {
+            throw new RuntimeException(
+                "Distance normalization for {$indicatorKey} requires target and max_deviation."
+            );
+        }
+
+        self::assertDecimal(
+            $normalization['target'],
+            "Distance target for {$indicatorKey}"
+        );
+
+        self::assertDecimal(
+            $normalization['max_deviation'],
+            "Distance max deviation for {$indicatorKey}"
+        );
+
+        if (
+            self::compareDecimals(
+                $normalization['max_deviation'],
+                '0'
+            ) <= 0
+        ) {
+            throw new RuntimeException(
+                "Distance max deviation must be positive for {$indicatorKey}."
+            );
+        }
+    }
+
+    private static function validateOutsideBandNormalization(
+        string $indicatorKey,
+        array $normalization
+    ): void {
+        foreach (
+            [
+                'outside_min',
+                'safe_min',
+                'safe_max',
+                'outside_max',
+            ] as $field
+        ) {
+            if (!array_key_exists($field, $normalization)) {
+                throw new RuntimeException(
+                    "Outside-band normalization for {$indicatorKey} requires {$field}."
+                );
+            }
+
+            self::assertDecimal(
+                $normalization[$field],
+                "Outside-band {$field} for {$indicatorKey}"
+            );
+        }
+
+        if (
+            self::compareDecimals(
+                $normalization['outside_min'],
+                $normalization['safe_min']
+            ) >= 0
+            || self::compareDecimals(
+                $normalization['safe_min'],
+                $normalization['safe_max']
+            ) >= 0
+            || self::compareDecimals(
+                $normalization['safe_max'],
+                $normalization['outside_max']
+            ) >= 0
+        ) {
+            throw new RuntimeException(
+                "Outside-band boundaries must be strictly increasing for {$indicatorKey}."
+            );
+        }
+    }
+
     private static function validateFrequencyDiscounts(
         array $discounts
     ): array {
-        $normalized = [];
+        $validated = [];
 
         foreach ($discounts as $frequency => $discount) {
-            if (!is_string($frequency) || $frequency === '') {
+            if (
+                !is_string($frequency)
+                || !in_array(
+                    $frequency,
+                    self::FREQUENCIES,
+                    true
+                )
+            ) {
                 throw new RuntimeException(
-                    'Frequency discount key cannot be empty.'
+                    "Invalid frequency discount key: {$frequency}"
                 );
             }
 
@@ -467,7 +466,7 @@ final class Configuration
 
             self::assertDecimal(
                 $discount,
-                "frequency discount for {$frequency}"
+                "Frequency discount for {$frequency}"
             );
 
             if (
@@ -485,76 +484,51 @@ final class Configuration
                 );
             }
 
-            $normalized[$frequency] = $discount;
+            $validated[$frequency] = $discount;
         }
 
-        return $normalized;
+        return $validated;
     }
 
-    /**
-     * @return array<string, string>
-     */
     private static function validateRiskBandThresholds(
         array $thresholds
     ): array {
-        if ($thresholds === []) {
-            throw new RuntimeException(
-                'Risk band thresholds cannot be empty.'
-            );
-        }
-
-        foreach (self::RISK_BANDS as $band) {
-            if (!array_key_exists($band, $thresholds)) {
+        foreach (self::RISK_BANDS as $riskBand) {
+            if (!array_key_exists($riskBand, $thresholds)) {
                 throw new RuntimeException(
-                    "Missing risk band threshold: {$band}."
-                );
-            }
-
-            if (!is_string($thresholds[$band])) {
-                throw new RuntimeException(
-                    "Risk band threshold for {$band} must be a decimal string."
+                    "Risk band threshold is required for {$riskBand}."
                 );
             }
 
             self::assertDecimal(
-                $thresholds[$band],
-                "risk band threshold for {$band}"
+                $thresholds[$riskBand],
+                "Risk band threshold for {$riskBand}"
             );
 
             if (
                 self::compareDecimals(
-                    $thresholds[$band],
+                    $thresholds[$riskBand],
                     '0'
                 ) < 0
                 || self::compareDecimals(
-                    $thresholds[$band],
+                    $thresholds[$riskBand],
                     '100'
                 ) > 0
             ) {
                 throw new RuntimeException(
-                    "Risk band threshold for {$band} must be between 0.0000 and 100.0000."
+                    "Risk band threshold for {$riskBand} must be between 0.0000 and 100.0000."
                 );
             }
         }
 
-        $ordered = [
-            'very_low',
-            'low',
-            'moderate',
-            'high',
-            'severe',
-        ];
+        for ($index = 1; $index < count(self::RISK_BANDS); $index++) {
+            $previous = self::RISK_BANDS[$index - 1];
+            $current = self::RISK_BANDS[$index];
 
-        for (
-            $i = 1,
-            $count = count($ordered);
-            $i < $count;
-            $i++
-        ) {
             if (
                 self::compareDecimals(
-                    $thresholds[$ordered[$i - 1]],
-                    $thresholds[$ordered[$i]]
+                    $thresholds[$previous],
+                    $thresholds[$current]
                 ) >= 0
             ) {
                 throw new RuntimeException(
@@ -564,23 +538,6 @@ final class Configuration
         }
 
         return $thresholds;
-    }
-
-    private static function assertIndicatorKey(
-        mixed $value
-    ): void {
-        if (
-            !is_string($value)
-            || $value === ''
-            || preg_match(
-                '/^[A-Za-z0-9][A-Za-z0-9._-]*$/',
-                $value
-            ) !== 1
-        ) {
-            throw new RuntimeException(
-                'Invalid configuration indicator key.'
-            );
-        }
     }
 
     private static function assertIdentifier(
@@ -600,12 +557,30 @@ final class Configuration
         }
     }
 
+    private static function assertIndicatorKey(
+        mixed $value
+    ): void {
+        if (
+            !is_string($value)
+            || $value === ''
+            || preg_match(
+                '/^[A-Za-z0-9][A-Za-z0-9._-]*$/',
+                $value
+            ) !== 1
+        ) {
+            throw new RuntimeException(
+                'Invalid indicator key.'
+            );
+        }
+    }
+
     private static function assertDecimal(
-        string $value,
+        mixed $value,
         string $field
     ): void {
         if (
-            preg_match(
+            !is_string($value)
+            || preg_match(
                 '/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/',
                 $value
             ) !== 1
@@ -632,24 +607,6 @@ final class Configuration
         );
     }
 
-    /**
-     * @param array<int, string> $values
-     */
-    private static function maximumDecimalScale(
-        array $values
-    ): int {
-        $scale = 0;
-
-        foreach ($values as $value) {
-            $scale = max(
-                $scale,
-                self::decimalScale($value)
-            );
-        }
-
-        return $scale;
-    }
-
     private static function decimalScale(
         string $value
     ): int {
@@ -663,34 +620,5 @@ final class Configuration
         }
 
         return strlen($value) - $position - 1;
-    }
-
-    private static function formatDecimal(
-        string $value,
-        int $scale
-    ): string {
-        if ($scale === 0) {
-            return $value;
-        }
-
-        if (strpos($value, '.') === false) {
-            return $value . '.' . str_repeat(
-                '0',
-                $scale
-            );
-        }
-
-        $currentScale = self::decimalScale(
-            $value
-        );
-
-        if ($currentScale >= $scale) {
-            return $value;
-        }
-
-        return $value . str_repeat(
-            '0',
-            $scale - $currentScale
-        );
     }
 }
