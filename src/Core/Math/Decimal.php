@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace MacroRisk\Core\Math;
 
-use InvalidArgumentException;
 use DivisionByZeroError;
+use InvalidArgumentException;
+use RuntimeException;
 
 final class Decimal
 {
@@ -20,7 +21,7 @@ final class Decimal
         self::assertScale($scale);
 
         if (!extension_loaded('bcmath')) {
-            throw new \RuntimeException('BCMath extension is required.');
+            throw new RuntimeException('BCMath extension is required.');
         }
 
         $this->scale = $scale;
@@ -98,14 +99,14 @@ final class Decimal
 
     public function absolute(): self
     {
-        if ($this->isNegative()) {
-            return new self(
-                bcmul($this->value, '-1', $this->scale),
-                $this->scale
-            );
+        if (!$this->isNegative()) {
+            return $this;
         }
 
-        return $this;
+        return new self(
+            bcmul($this->value, '-1', $this->scale),
+            $this->scale
+        );
     }
 
     public function negate(): self
@@ -187,41 +188,56 @@ final class Decimal
         $negative = $this->isNegative();
         $absolute = $this->absolute()->value;
 
-        $shifted = bcmul(
+        $truncated = bcmul(
             $absolute,
             $factor,
             0
         );
 
+        $truncatedValue = bcdiv(
+            $truncated,
+            $factor,
+            $this->scale
+        );
+
         $remainder = bcsub(
             $absolute,
-            bcdiv($shifted, $factor, $this->scale),
+            $truncatedValue,
             $this->scale
         );
 
         $half = bcdiv(
-            '1',
-            bcmul($factor, '1', 0),
+            '5',
+            '1' . str_repeat('0', $scale + 1),
             $this->scale
         );
 
-        $rounded = $shifted;
-
         if (bccomp($remainder, $half, $this->scale) >= 0) {
-            $rounded = bcadd($rounded, '1', 0);
+            $truncated = bcadd(
+                $truncated,
+                '1',
+                0
+            );
         }
 
         $result = bcdiv(
-            $rounded,
+            $truncated,
             $factor,
             $scale
         );
 
-        if ($negative && $result !== '0') {
-            $result = bcmul($result, '-1', $scale);
+        if ($negative && bccomp($result, '0', $scale) !== 0) {
+            $result = bcmul(
+                $result,
+                '-1',
+                $scale
+            );
         }
 
-        return new self($result, $scale);
+        return new self(
+            $result,
+            $scale
+        );
     }
 
     public function withScale(int $scale): self
