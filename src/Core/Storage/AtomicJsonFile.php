@@ -21,14 +21,7 @@ final class AtomicJsonFile
     public function write(string $filename, string $contents): void
     {
         $this->assertFilename($filename);
-
-        if (!is_dir($this->directory)) {
-            if (!mkdir($this->directory, 0775, true) && !is_dir($this->directory)) {
-                throw new RuntimeException(
-                    "Unable to create directory: {$this->directory}"
-                );
-            }
-        }
+        $this->ensureDirectory();
 
         if (!is_writable($this->directory)) {
             throw new RuntimeException(
@@ -45,17 +38,17 @@ final class AtomicJsonFile
             );
         }
 
-        $handle = fopen($temporary, 'wb');
-
-        if ($handle === false) {
-            @unlink($temporary);
-
-            throw new RuntimeException(
-                "Unable to open temporary file: {$temporary}"
-            );
-        }
+        $handle = null;
 
         try {
+            $handle = fopen($temporary, 'wb');
+
+            if ($handle === false) {
+                throw new RuntimeException(
+                    "Unable to open temporary file: {$temporary}"
+                );
+            }
+
             if (!flock($handle, LOCK_EX)) {
                 throw new RuntimeException(
                     "Unable to acquire exclusive lock: {$temporary}"
@@ -92,7 +85,12 @@ final class AtomicJsonFile
                 );
             }
 
-            flock($handle, LOCK_UN);
+            if (!flock($handle, LOCK_UN)) {
+                throw new RuntimeException(
+                    "Unable to release exclusive lock: {$temporary}"
+                );
+            }
+
             fclose($handle);
             $handle = null;
 
@@ -148,7 +146,11 @@ final class AtomicJsonFile
                 );
             }
 
-            flock($handle, LOCK_UN);
+            if (!flock($handle, LOCK_UN)) {
+                throw new RuntimeException(
+                    "Unable to release shared lock: {$path}"
+                );
+            }
 
             return $contents;
         } finally {
@@ -163,6 +165,68 @@ final class AtomicJsonFile
         return is_file(
             $this->directory . DIRECTORY_SEPARATOR . $filename
         );
+    }
+
+    public function delete(string $filename): void
+    {
+        $this->assertFilename($filename);
+
+        $path = $this->directory . DIRECTORY_SEPARATOR . $filename;
+
+        if (!is_file($path)) {
+            return;
+        }
+
+        $handle = fopen($path, 'rb');
+
+        if ($handle === false) {
+            throw new RuntimeException(
+                "Unable to open file for deletion: {$path}"
+            );
+        }
+
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                throw new RuntimeException(
+                    "Unable to acquire exclusive lock for deletion: {$path}"
+                );
+            }
+
+            if (!unlink($path)) {
+                throw new RuntimeException(
+                    "Unable to delete file: {$path}"
+                );
+            }
+
+            flock($handle, LOCK_UN);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    public function directory(): string
+    {
+        return $this->directory;
+    }
+
+    private function ensureDirectory(): void
+    {
+        if (is_dir($this->directory)) {
+            return;
+        }
+
+        if (
+            !mkdir(
+                $this->directory,
+                0775,
+                true
+            )
+            && !is_dir($this->directory)
+        ) {
+            throw new RuntimeException(
+                "Unable to create directory: {$this->directory}"
+            );
+        }
     }
 
     private function assertFilename(string $filename): void

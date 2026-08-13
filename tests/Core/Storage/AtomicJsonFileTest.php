@@ -82,9 +82,10 @@ function assertThrows(
 
 function createTemporaryDirectory(): string
 {
-    $base = sys_get_temp_dir();
-    $directory = $base . DIRECTORY_SEPARATOR
-        . 'macrorisk-atomic-' . bin2hex(random_bytes(8));
+    $directory = sys_get_temp_dir()
+        . DIRECTORY_SEPARATOR
+        . 'macrorisk-atomic-'
+        . bin2hex(random_bytes(8));
 
     if (!mkdir($directory, 0775, true)) {
         throw new RuntimeException(
@@ -143,7 +144,6 @@ $tests = [
 
         try {
             $directory = $root . DIRECTORY_SEPARATOR . 'nested';
-
             $storage = new AtomicJsonFile($directory);
 
             assertFalseValue(
@@ -162,7 +162,9 @@ $tests = [
             );
 
             assertTrueValue(
-                is_file($directory . DIRECTORY_SEPARATOR . 'data.json'),
+                is_file(
+                    $directory . DIRECTORY_SEPARATOR . 'data.json'
+                ),
                 'Write must create the target file.'
             );
         } finally {
@@ -215,7 +217,7 @@ $tests = [
         }
     },
 
-    'write replaces existing file atomically' => static function (): void {
+    'write replaces existing file' => static function (): void {
         $directory = createTemporaryDirectory();
 
         try {
@@ -301,6 +303,56 @@ $tests = [
         }
     },
 
+    'delete removes an existing file' => static function (): void {
+        $directory = createTemporaryDirectory();
+
+        try {
+            $storage = new AtomicJsonFile($directory);
+
+            $storage->write(
+                'data.json',
+                '{"value":"delete-me"}'
+            );
+
+            assertTrueValue(
+                $storage->exists('data.json'),
+                'File must exist before deletion.'
+            );
+
+            $storage->delete('data.json');
+
+            assertFalseValue(
+                $storage->exists('data.json'),
+                'File must not exist after deletion.'
+            );
+
+            assertSameValue(
+                null,
+                $storage->read('data.json'),
+                'Deleted file must be unreadable.'
+            );
+        } finally {
+            removeDirectory($directory);
+        }
+    },
+
+    'delete of missing file is idempotent' => static function (): void {
+        $directory = createTemporaryDirectory();
+
+        try {
+            $storage = new AtomicJsonFile($directory);
+
+            $storage->delete('missing.json');
+
+            assertFalseValue(
+                $storage->exists('missing.json'),
+                'Deleting a missing file must leave it missing.'
+            );
+        } finally {
+            removeDirectory($directory);
+        }
+    },
+
     'filename path traversal is rejected' => static function (): void {
         $directory = createTemporaryDirectory();
 
@@ -320,7 +372,10 @@ $tests = [
             foreach ($invalidFilenames as $filename) {
                 assertThrows(
                     RuntimeException::class,
-                    static function () use ($storage, $filename): void {
+                    static function () use (
+                        $storage,
+                        $filename
+                    ): void {
                         $storage->write($filename, '{}');
                     },
                     "Invalid filename must be rejected: {$filename}"
@@ -331,7 +386,7 @@ $tests = [
         }
     },
 
-    'read also rejects filename path traversal' => static function (): void {
+    'read rejects filename path traversal' => static function (): void {
         $directory = createTemporaryDirectory();
 
         try {
@@ -351,6 +406,24 @@ $tests = [
                     $storage->exists('../data.json');
                 },
                 'exists() must reject path traversal.'
+            );
+        } finally {
+            removeDirectory($directory);
+        }
+    },
+
+    'delete rejects filename path traversal' => static function (): void {
+        $directory = createTemporaryDirectory();
+
+        try {
+            $storage = new AtomicJsonFile($directory);
+
+            assertThrows(
+                RuntimeException::class,
+                static function () use ($storage): void {
+                    $storage->delete('../data.json');
+                },
+                'delete() must reject path traversal.'
             );
         } finally {
             removeDirectory($directory);
@@ -416,6 +489,7 @@ $passed = 0;
 foreach ($tests as $name => $test) {
     $test();
     $passed++;
+
     echo '[OK] ' . $name . PHP_EOL;
 }
 
