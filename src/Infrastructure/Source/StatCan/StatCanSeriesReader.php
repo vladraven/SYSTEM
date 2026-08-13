@@ -265,8 +265,33 @@ final class StatCanSeriesReader
             return (string) $value;
         }
 
+        if (is_float($value)) {
+            if (!is_finite($value)) {
+                throw new RuntimeException(
+                    "SOURCE_SCHEMA_MISMATCH: non-finite decimal value at {$path}.{$key}."
+                );
+            }
+
+            $value = json_encode(
+                $value,
+                JSON_PRESERVE_ZERO_FRACTION
+                | JSON_THROW_ON_ERROR
+            );
+
+            if (
+                !is_string($value)
+                || !self::isDecimalString($value)
+            ) {
+                throw new RuntimeException(
+                    "SOURCE_SCHEMA_MISMATCH: invalid floating-point decimal value at {$path}.{$key}."
+                );
+            }
+
+            return $value;
+        }
+
         throw new RuntimeException(
-            "SOURCE_SCHEMA_MISMATCH: decimal value must be string or integer at {$path}.{$key}."
+            "SOURCE_SCHEMA_MISMATCH: decimal value must be numeric or string at {$path}.{$key}."
         );
     }
 

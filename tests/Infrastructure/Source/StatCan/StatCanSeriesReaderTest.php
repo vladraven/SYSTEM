@@ -259,7 +259,6 @@ $tests = [
                         'scalarFactorCode' => 0,
                         'symbolCode' => 0,
                         'statusCode' => 0,
-                        'securityLevelCode' => 0,
                         'releaseTime' => '2026-02-01T08:30',
                         'frequencyCode' => 9,
                     ],
@@ -280,37 +279,48 @@ $tests = [
         );
     },
 
-    'float value is rejected' => static function (): void {
+    'floating point value is normalized' => static function (): void {
         $transport = new FakeStatCanReaderTransport(
             new HttpResponse(
                 200,
-                successResponse([
-                    [
-                        'refPer' => '2026-01-01',
-                        'refPerRaw' => '2026-01-01',
-                        'value' => 528800.0,
-                        'decimals' => 0,
-                        'scalarFactorCode' => 0,
-                        'symbolCode' => 0,
-                        'statusCode' => 0,
-                        'securityLevelCode' => 0,
-                        'releaseTime' => '2026-02-01T08:30',
-                        'frequencyCode' => 9,
-                    ],
-                ])
+                '[
+                    {
+                        "status": "SUCCESS",
+                        "object": {
+                            "responseStatusCode": 0,
+                            "productId": 35100003,
+                            "coordinate": "1.0",
+                            "vectorId": 32164132,
+                            "vectorDataPoint": [
+                                {
+                                    "refPer": "2026-01-01",
+                                    "refPerRaw": "2026-01-01",
+                                    "value": 528800.0,
+                                    "decimals": 1,
+                                    "scalarFactorCode": 0,
+                                    "symbolCode": 0,
+                                    "statusCode": 0,
+                                    "securityLevelCode": 0,
+                                    "releaseTime": "2026-02-01T08:30",
+                                    "frequencyCode": 9
+                                }
+                            ]
+                        }
+                    }
+                ]'
             )
         );
 
         $reader = createReader($transport);
 
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($reader): void {
-                $reader->readChangedSeriesData(
-                    '32164132'
-                );
-            },
-            'Float values must not be silently converted.'
+        $records = $reader->readChangedSeriesData(
+            '32164132'
+        );
+
+        assertSameValue(
+            '528800.0',
+            $records[0]['value'],
+            'Floating point source values must be normalized to decimal strings.'
         );
     },
 
@@ -327,7 +337,6 @@ $tests = [
                         'scalarFactorCode' => 0,
                         'symbolCode' => 0,
                         'statusCode' => 0,
-                        'securityLevelCode' => 0,
                         'releaseTime' => '2026-02-01T08:30',
                         'frequencyCode' => 9,
                     ],
@@ -361,7 +370,6 @@ $tests = [
                         'scalarFactorCode' => 0,
                         'symbolCode' => 0,
                         'statusCode' => 0,
-                        'securityLevelCode' => 0,
                         'releaseTime' => '2026-02-01T08:30',
                     ],
                 ])
