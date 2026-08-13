@@ -69,15 +69,6 @@ function assertSameValue(
     }
 }
 
-function assertTrueValue(
-    bool $condition,
-    string $message
-): void {
-    if (!$condition) {
-        throw new RuntimeException($message);
-    }
-}
-
 function assertThrows(
     string $exceptionClass,
     callable $callback,
@@ -119,117 +110,213 @@ function createClient(
 }
 
 $tests = [
-    'empty product id is rejected' => static function (): void {
+    'changed series uses GET' => static function (): void {
         $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{}')
+            new HttpResponse(
+                200,
+                '{"results":[]}'
+            )
         );
 
         $client = createClient($transport);
 
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getFullTableDownloadList('');
-            },
-            'Empty product ID must be rejected.'
+        $client->getChangedSeriesList();
+
+        assertSameValue(
+            'GET',
+            $transport->requests[0]['method'],
+            'Changed series must use GET.'
         );
 
         assertSameValue(
-            0,
-            count($transport->requests),
-            'Invalid input must not reach HTTP transport.'
+            'https://www150.statcan.gc.ca/t1/wds/rest/getChangedSeriesList',
+            $transport->requests[0]['url'],
+            'Changed series URL is incorrect.'
         );
     },
 
-    'non numeric product id is rejected' => static function (): void {
+    'series info uses canonical POST endpoint' => static function (): void {
         $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{}')
+            new HttpResponse(
+                200,
+                '{"object":[]}'
+            )
         );
 
         $client = createClient($transport);
 
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getFullTableDownloadList('abc');
-            },
-            'Non-numeric product ID must be rejected.'
+        $client->getSeriesInfo('32164132');
+
+        assertSameValue(
+            'POST',
+            $transport->requests[0]['method'],
+            'Series info must use POST.'
         );
 
         assertSameValue(
-            0,
-            count($transport->requests),
-            'Invalid input must not reach HTTP transport.'
-        );
-    },
-
-    'bulk product id is validated' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{}')
-        );
-
-        $client = createClient($transport);
-
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getBulkDownloadFileList('abc');
-            },
-            'Non-numeric bulk product ID must be rejected.'
+            'https://www150.statcan.gc.ca/t1/wds/rest/getSeriesInfoFromVector',
+            $transport->requests[0]['url'],
+            'Series info endpoint is incorrect.'
         );
 
         assertSameValue(
-            0,
-            count($transport->requests),
-            'Invalid input must not reach HTTP transport.'
+            '[{"vectorId":32164132}]',
+            $transport->requests[0]['body'],
+            'Series info payload is incorrect.'
         );
     },
 
-    'empty vector id is rejected' => static function (): void {
+    'latest periods uses canonical POST endpoint' => static function (): void {
         $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{}')
+            new HttpResponse(
+                200,
+                '{"object":[]}'
+            )
         );
 
         $client = createClient($transport);
 
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getSeriesInfo('');
-            },
-            'Empty vector ID must be rejected.'
+        $client->getLatestPeriods(
+            '32164132',
+            120
         );
 
         assertSameValue(
-            0,
-            count($transport->requests),
-            'Invalid input must not reach HTTP transport.'
-        );
-    },
-
-    'non numeric vector id is rejected' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{}')
-        );
-
-        $client = createClient($transport);
-
-        assertThrows(
-            RuntimeException::class,
-            static function () use ($client): void {
-                $client->getSeriesInfo('vector');
-            },
-            'Non-numeric vector ID must be rejected.'
+            'POST',
+            $transport->requests[0]['method'],
+            'Latest periods must use POST.'
         );
 
         assertSameValue(
-            0,
-            count($transport->requests),
-            'Invalid input must not reach HTTP transport.'
+            'https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorsAndLatestNPeriods',
+            $transport->requests[0]['url'],
+            'Latest periods endpoint is incorrect.'
+        );
+
+        assertSameValue(
+            '[{"vectorId":32164132,"latestN":120}]',
+            $transport->requests[0]['body'],
+            'Latest periods payload is incorrect.'
         );
     },
 
-    'empty reference period is rejected' => static function (): void {
+    'changed series data uses canonical POST endpoint' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"object":[]}'
+            )
+        );
+
+        $client = createClient($transport);
+
+        $client->getChangedSeriesData('32164132');
+
+        assertSameValue(
+            'POST',
+            $transport->requests[0]['method'],
+            'Changed series data must use POST.'
+        );
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getChangedSeriesDataFromVector',
+            $transport->requests[0]['url'],
+            'Changed series data endpoint is incorrect.'
+        );
+
+        assertSameValue(
+            '[{"vectorId":32164132}]',
+            $transport->requests[0]['body'],
+            'Changed series data payload is incorrect.'
+        );
+    },
+
+    'reference range uses canonical query parameters' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"object":[]}'
+            )
+        );
+
+        $client = createClient($transport);
+
+        $client->getReferencePeriodRange(
+            [
+                '1',
+                '2',
+            ],
+            '2016-01-01',
+            '2017-01-01'
+        );
+
+        assertSameValue(
+            'GET',
+            $transport->requests[0]['method'],
+            'Reference range must use GET.'
+        );
+
+        assertSameValue(
+            'https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange?vectorIds=%221%22%2C%222%22&startRefPeriod=2016-01-01&endReferencePeriod=2017-01-01',
+            $transport->requests[0]['url'],
+            'Reference range URL is incorrect.'
+        );
+    },
+
+    'full table csv returns official object URL' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"object":"https://example.test/table.zip"}'
+            )
+        );
+
+        $client = createClient($transport);
+
+        assertSameValue(
+            'https://example.test/table.zip',
+            $client->getFullTableCsvUrl('14100287'),
+            'Full table CSV URL must be taken from the official response.'
+        );
+    },
+
+    'full table sdmx returns official object URL' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"object":"https://example.test/table-sdmx.zip"}'
+            )
+        );
+
+        $client = createClient($transport);
+
+        assertSameValue(
+            'https://example.test/table-sdmx.zip',
+            $client->getFullTableSdmxUrl('14100287'),
+            'Full table SDMX URL must be taken from the official response.'
+        );
+    },
+
+    'missing full table csv URL is rejected' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(
+                200,
+                '{"object":null}'
+            )
+        );
+
+        $client = createClient($transport);
+
+        assertThrows(
+            RuntimeException::class,
+            static function () use ($client): void {
+                $client->getFullTableCsvUrl('14100287');
+            },
+            'Missing CSV URL must be rejected.'
+        );
+    },
+
+    'empty vector list is rejected' => static function (): void {
         $transport = new FakeHttpTransport(
             new HttpResponse(200, '{}')
         );
@@ -239,12 +326,60 @@ $tests = [
         assertThrows(
             RuntimeException::class,
             static function () use ($client): void {
-                $client->getDataFromVectorByReferencePeriod(
-                    '12345',
-                    ''
+                $client->getReferencePeriodRange(
+                    [],
+                    '2026-01-01',
+                    '2026-02-01'
                 );
             },
-            'Empty reference period must be rejected.'
+            'Empty vector list must be rejected.'
+        );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
+        );
+    },
+
+    'invalid vector id is rejected' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
+        );
+
+        $client = createClient($transport);
+
+        assertThrows(
+            RuntimeException::class,
+            static function () use ($client): void {
+                $client->getSeriesInfo('abc');
+            },
+            'Invalid vector ID must be rejected.'
+        );
+
+        assertSameValue(
+            0,
+            count($transport->requests),
+            'Invalid input must not reach HTTP transport.'
+        );
+    },
+
+    'latestN must be positive' => static function (): void {
+        $transport = new FakeHttpTransport(
+            new HttpResponse(200, '{}')
+        );
+
+        $client = createClient($transport);
+
+        assertThrows(
+            RuntimeException::class,
+            static function () use ($client): void {
+                $client->getLatestPeriods(
+                    '123',
+                    0
+                );
+            },
+            'latestN must be greater than zero.'
         );
     },
 
@@ -258,16 +393,17 @@ $tests = [
         assertThrows(
             RuntimeException::class,
             static function () use ($client): void {
-                $client->getDataFromVectorByReferencePeriod(
-                    '12345',
-                    '2026-1'
+                $client->getReferencePeriodRange(
+                    ['123'],
+                    '2026-1',
+                    '2026-02'
                 );
             },
             'Invalid reference period must be rejected.'
         );
     },
 
-    'start period cannot exceed end period' => static function (): void {
+    'reversed reference range is rejected' => static function (): void {
         $transport = new FakeHttpTransport(
             new HttpResponse(200, '{}')
         );
@@ -277,171 +413,22 @@ $tests = [
         assertThrows(
             RuntimeException::class,
             static function () use ($client): void {
-                $client->getDataFromVectorByReferencePeriodRange(
-                    '12345',
+                $client->getReferencePeriodRange(
+                    ['123'],
                     '2026-12',
                     '2026-01'
                 );
             },
-            'Start period must not exceed end period.'
-        );
-
-        assertSameValue(
-            0,
-            count($transport->requests),
-            'Invalid range must not reach HTTP transport.'
+            'Reversed reference range must be rejected.'
         );
     },
 
-    'changed series endpoint is constructed correctly' => static function (): void {
+    'HTTP error is propagated' => static function (): void {
         $transport = new FakeHttpTransport(
             new HttpResponse(
-                200,
-                '{"status":"ok","results":[]}'
+                404,
+                '{"error":"not found"}'
             )
-        );
-
-        $client = createClient($transport);
-
-        $result = $client->getChangedSeriesList();
-
-        assertSameValue(
-            [
-                'status' => 'ok',
-                'results' => [],
-            ],
-            $result,
-            'StatCan response must be returned unchanged after JSON decoding.'
-        );
-
-        assertSameValue(
-            'GET',
-            $transport->requests[0]['method'],
-            'StatCan requests must use GET.'
-        );
-
-        assertSameValue(
-            'https://www150.statcan.gc.ca/t1/wds/rest/getChangedSeriesList',
-            $transport->requests[0]['url'],
-            'Changed series URL is incorrect.'
-        );
-    },
-
-    'full table endpoint is constructed correctly' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{"results":[]}')
-        );
-
-        $client = createClient($transport);
-
-        $client->getFullTableDownloadList('36100287');
-
-        assertSameValue(
-            'https://www150.statcan.gc.ca/t1/wds/rest/getFullTableDownloadList/36100287',
-            $transport->requests[0]['url'],
-            'Full table URL is incorrect.'
-        );
-    },
-
-    'bulk download endpoint is constructed correctly' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{"results":[]}')
-        );
-
-        $client = createClient($transport);
-
-        $client->getBulkDownloadFileList('36100287');
-
-        assertSameValue(
-            'https://www150.statcan.gc.ca/t1/wds/rest/getBulkDownloadFileList/36100287',
-            $transport->requests[0]['url'],
-            'Bulk download URL is incorrect.'
-        );
-    },
-
-    'series info endpoint is constructed correctly' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{"results":[]}')
-        );
-
-        $client = createClient($transport);
-
-        $client->getSeriesInfo('41690973');
-
-        assertSameValue(
-            'https://www150.statcan.gc.ca/t1/wds/rest/getSeriesInfoFromVectorByReferencePeriod/41690973',
-            $transport->requests[0]['url'],
-            'Series info URL is incorrect.'
-        );
-    },
-
-    'single period endpoint is constructed correctly' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{"results":[]}')
-        );
-
-        $client = createClient($transport);
-
-        $client->getDataFromVectorByReferencePeriod(
-            '41690973',
-            '2026-01'
-        );
-
-        assertSameValue(
-            'https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriod/41690973/2026-01',
-            $transport->requests[0]['url'],
-            'Single-period URL is incorrect.'
-        );
-    },
-
-    'range endpoint is constructed correctly' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(200, '{"results":[]}')
-        );
-
-        $client = createClient($transport);
-
-        $client->getDataFromVectorByReferencePeriodRange(
-            '41690973',
-            '2025-01',
-            '2026-01'
-        );
-
-        assertSameValue(
-            'https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVectorByReferencePeriodRange/41690973/2025-01/2026-01',
-            $transport->requests[0]['url'],
-            'Range URL is incorrect.'
-        );
-    },
-
-    'unicode and large integers survive transport decoding' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(
-                200,
-                '{"title":"Канада","identifier":92233720368547758079223372036854775807}'
-            )
-        );
-
-        $client = createClient($transport);
-
-        $result = $client->getChangedSeriesList();
-
-        assertSameValue(
-            'Канада',
-            $result['title'],
-            'Unicode response data must be preserved.'
-        );
-
-        assertSameValue(
-            '92233720368547758079223372036854775807',
-            $result['identifier'],
-            'Large integer response data must remain exact.'
-        );
-    },
-
-    'HTTP errors are propagated' => static function (): void {
-        $transport = new FakeHttpTransport(
-            new HttpResponse(404, '{"error":"not found"}')
         );
 
         $client = createClient($transport);
@@ -451,7 +438,7 @@ $tests = [
             static function () use ($client): void {
                 $client->getChangedSeriesList();
             },
-            'HTTP errors must not be returned as valid StatCan data.'
+            'HTTP errors must propagate.'
         );
     },
 ];

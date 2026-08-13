@@ -24,36 +24,6 @@ final class StatCanClient
         );
     }
 
-    public function getFullTableDownloadList(
-        string $productId
-    ): array {
-        $productId = trim($productId);
-
-        self::assertNumericId(
-            $productId,
-            'product'
-        );
-
-        return $this->get(
-            '/getFullTableDownloadList/' . $productId
-        );
-    }
-
-    public function getBulkDownloadFileList(
-        string $productId
-    ): array {
-        $productId = trim($productId);
-
-        self::assertNumericId(
-            $productId,
-            'product'
-        );
-
-        return $this->get(
-            '/getBulkDownloadFileList/' . $productId
-        );
-    }
-
     public function getSeriesInfo(
         string $vectorId
     ): array {
@@ -64,24 +34,71 @@ final class StatCanClient
             'vector'
         );
 
-        return $this->get(
-            '/getSeriesInfoFromVectorByReferencePeriod'
-            . '/' . $vectorId
+        return $this->http->postJson(
+            self::BASE_URL . '/getSeriesInfoFromVector',
+            [
+                [
+                    'vectorId' => self::toIntegerId($vectorId),
+                ],
+            ]
         );
     }
 
-    public function getDataFromVectorByReferencePeriodRange(
+    public function getLatestPeriods(
         string $vectorId,
-        string $startReferencePeriod,
-        string $endReferencePeriod
+        int $latestN
     ): array {
         $vectorId = trim($vectorId);
-        $startReferencePeriod = trim($startReferencePeriod);
-        $endReferencePeriod = trim($endReferencePeriod);
 
         self::assertNumericId(
             $vectorId,
             'vector'
+        );
+
+        if ($latestN < 1) {
+            throw new RuntimeException(
+                'StatCan latestN must be greater than zero.'
+            );
+        }
+
+        return $this->http->postJson(
+            self::BASE_URL . '/getDataFromVectorsAndLatestNPeriods',
+            [
+                [
+                    'vectorId' => self::toIntegerId($vectorId),
+                    'latestN' => $latestN,
+                ],
+            ]
+        );
+    }
+
+    public function getChangedSeriesData(
+        string $vectorId
+    ): array {
+        $vectorId = trim($vectorId);
+
+        self::assertNumericId(
+            $vectorId,
+            'vector'
+        );
+
+        return $this->http->postJson(
+            self::BASE_URL . '/getChangedSeriesDataFromVector',
+            [
+                [
+                    'vectorId' => self::toIntegerId($vectorId),
+                ],
+            ]
+        );
+    }
+
+    public function getReferencePeriodRange(
+        array $vectorIds,
+        string $startReferencePeriod,
+        string $endReferencePeriod
+    ): array {
+        $normalizedVectorIds = self::normalizeVectorIds(
+            $vectorIds
         );
 
         self::assertReferencePeriod(
@@ -98,35 +115,80 @@ final class StatCanClient
             );
         }
 
+        $query = http_build_query(
+            [
+                'vectorIds' => '"' . implode(
+                    '","',
+                    $normalizedVectorIds
+                ) . '"',
+                'startRefPeriod' => $startReferencePeriod,
+                'endReferencePeriod' => $endReferencePeriod,
+            ],
+            '',
+            '&',
+            PHP_QUERY_RFC3986
+        );
+
         return $this->get(
-            '/getDataFromVectorByReferencePeriodRange'
-            . '/' . $vectorId
-            . '/' . rawurlencode($startReferencePeriod)
-            . '/' . rawurlencode($endReferencePeriod)
+            '/getDataFromVectorByReferencePeriodRange?' . $query
         );
     }
 
-    public function getDataFromVectorByReferencePeriod(
-        string $vectorId,
-        string $referencePeriod
-    ): array {
-        $vectorId = trim($vectorId);
-        $referencePeriod = trim($referencePeriod);
+    public function getFullTableCsvUrl(
+        string $productId
+    ): string {
+        $productId = trim($productId);
 
         self::assertNumericId(
-            $vectorId,
-            'vector'
+            $productId,
+            'product'
         );
 
-        self::assertReferencePeriod(
-            $referencePeriod
+        $response = $this->get(
+            '/getFullTableDownloadCSV/'
+            . $productId
+            . '/en'
         );
 
-        return $this->get(
-            '/getDataFromVectorByReferencePeriod'
-            . '/' . $vectorId
-            . '/' . rawurlencode($referencePeriod)
+        if (
+            !isset($response['object'])
+            || !is_string($response['object'])
+            || trim($response['object']) === ''
+        ) {
+            throw new RuntimeException(
+                'SOURCE_SCHEMA_MISMATCH: missing StatCan CSV download URL.'
+            );
+        }
+
+        return $response['object'];
+    }
+
+    public function getFullTableSdmxUrl(
+        string $productId
+    ): string {
+        $productId = trim($productId);
+
+        self::assertNumericId(
+            $productId,
+            'product'
         );
+
+        $response = $this->get(
+            '/getFullTableDownloadSDMX/'
+            . $productId
+        );
+
+        if (
+            !isset($response['object'])
+            || !is_string($response['object'])
+            || trim($response['object']) === ''
+        ) {
+            throw new RuntimeException(
+                'SOURCE_SCHEMA_MISMATCH: missing StatCan SDMX download URL.'
+            );
+        }
+
+        return $response['object'];
     }
 
     private function get(string $path): array
@@ -136,6 +198,40 @@ final class StatCanClient
             . '/'
             . ltrim($path, '/')
         );
+    }
+
+    private static function normalizeVectorIds(
+        array $vectorIds
+    ): array {
+        if ($vectorIds === []) {
+            throw new RuntimeException(
+                'StatCan vector ID list cannot be empty.'
+            );
+        }
+
+        $normalized = [];
+
+        foreach ($vectorIds as $vectorId) {
+            if (
+                !is_string($vectorId)
+                && !is_int($vectorId)
+            ) {
+                throw new RuntimeException(
+                    'StatCan vector IDs must be integers or numeric strings.'
+                );
+            }
+
+            $vectorId = trim((string) $vectorId);
+
+            self::assertNumericId(
+                $vectorId,
+                'vector'
+            );
+
+            $normalized[] = $vectorId;
+        }
+
+        return $normalized;
     }
 
     private static function assertNumericId(
@@ -155,9 +251,28 @@ final class StatCanClient
         }
     }
 
+    private static function toIntegerId(
+        string $value
+    ): int {
+        $integer = filter_var(
+            $value,
+            FILTER_VALIDATE_INT
+        );
+
+        if ($integer === false || $integer < 1) {
+            throw new RuntimeException(
+                "StatCan ID is outside the supported PHP integer range: {$value}"
+            );
+        }
+
+        return $integer;
+    }
+
     private static function assertReferencePeriod(
         string $referencePeriod
     ): void {
+        $referencePeriod = trim($referencePeriod);
+
         if ($referencePeriod === '') {
             throw new RuntimeException(
                 'StatCan reference period cannot be empty.'
@@ -165,7 +280,7 @@ final class StatCanClient
         }
 
         if (!preg_match(
-            '/^\d{4}(?:-\d{2})?$/',
+            '/^\d{4}(?:-\d{2}(?:-\d{2})?)?$/',
             $referencePeriod
         )) {
             throw new RuntimeException(
