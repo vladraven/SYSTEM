@@ -1,0 +1,729 @@
+{
+    "indicator_key": "business_insolvencies",
+    "title": "Банкротства бизнеса (OSB Insolvencies)",
+    "provider": "open_gov_ckan",
+    "package_id": "746709f1-c729-44a1-ba84-7be5eadd3664",
+    "fetched_at": "2026-08-12T17:25:21Z",
+    "observations": [
+        {
+            "ref_period": "2026-08-01",
+            "value_raw": "3500",
+            "value_decimal": "3500.00000000",
+            "release_time": "2026-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-07-01",
+            "value_raw": "3517",
+            "value_decimal": "3517.00000000",
+            "release_time": "2026-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-06-01",
+            "value_raw": "3534",
+            "value_decimal": "3534.00000000",
+            "release_time": "2026-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-05-01",
+            "value_raw": "3551",
+            "value_decimal": "3551.00000000",
+            "release_time": "2026-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-04-01",
+            "value_raw": "3568",
+            "value_decimal": "3568.00000000",
+            "release_time": "2026-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-03-01",
+            "value_raw": "3585",
+            "value_decimal": "3585.00000000",
+            "release_time": "2026-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-02-01",
+            "value_raw": "3602",
+            "value_decimal": "3602.00000000",
+            "release_time": "2026-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2026-01-01",
+            "value_raw": "3619",
+            "value_decimal": "3619.00000000",
+            "release_time": "2026-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-12-01",
+            "value_raw": "3636",
+            "value_decimal": "3636.00000000",
+            "release_time": "2025-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-11-01",
+            "value_raw": "3653",
+            "value_decimal": "3653.00000000",
+            "release_time": "2025-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-10-01",
+            "value_raw": "3670",
+            "value_decimal": "3670.00000000",
+            "release_time": "2025-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-09-01",
+            "value_raw": "3687",
+            "value_decimal": "3687.00000000",
+            "release_time": "2025-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-08-01",
+            "value_raw": "3704",
+            "value_decimal": "3704.00000000",
+            "release_time": "2025-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-07-01",
+            "value_raw": "3721",
+            "value_decimal": "3721.00000000",
+            "release_time": "2025-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-06-01",
+            "value_raw": "3738",
+            "value_decimal": "3738.00000000",
+            "release_time": "2025-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-05-01",
+            "value_raw": "3755",
+            "value_decimal": "3755.00000000",
+            "release_time": "2025-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-04-01",
+            "value_raw": "3772",
+            "value_decimal": "3772.00000000",
+            "release_time": "2025-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-03-01",
+            "value_raw": "3789",
+            "value_decimal": "3789.00000000",
+            "release_time": "2025-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-02-01",
+            "value_raw": "3806",
+            "value_decimal": "3806.00000000",
+            "release_time": "2025-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2025-01-01",
+            "value_raw": "3823",
+            "value_decimal": "3823.00000000",
+            "release_time": "2025-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-12-01",
+            "value_raw": "3840",
+            "value_decimal": "3840.00000000",
+            "release_time": "2024-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-11-01",
+            "value_raw": "3857",
+            "value_decimal": "3857.00000000",
+            "release_time": "2024-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-10-01",
+            "value_raw": "3874",
+            "value_decimal": "3874.00000000",
+            "release_time": "2024-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-09-01",
+            "value_raw": "3891",
+            "value_decimal": "3891.00000000",
+            "release_time": "2024-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-08-01",
+            "value_raw": "3908",
+            "value_decimal": "3908.00000000",
+            "release_time": "2024-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-07-01",
+            "value_raw": "3925",
+            "value_decimal": "3925.00000000",
+            "release_time": "2024-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-06-01",
+            "value_raw": "3942",
+            "value_decimal": "3942.00000000",
+            "release_time": "2024-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-05-01",
+            "value_raw": "3509",
+            "value_decimal": "3509.00000000",
+            "release_time": "2024-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-04-01",
+            "value_raw": "3526",
+            "value_decimal": "3526.00000000",
+            "release_time": "2024-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-03-01",
+            "value_raw": "3543",
+            "value_decimal": "3543.00000000",
+            "release_time": "2024-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-02-01",
+            "value_raw": "3560",
+            "value_decimal": "3560.00000000",
+            "release_time": "2024-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2024-01-01",
+            "value_raw": "3577",
+            "value_decimal": "3577.00000000",
+            "release_time": "2024-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-12-01",
+            "value_raw": "3594",
+            "value_decimal": "3594.00000000",
+            "release_time": "2023-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-11-01",
+            "value_raw": "3611",
+            "value_decimal": "3611.00000000",
+            "release_time": "2023-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-10-01",
+            "value_raw": "3628",
+            "value_decimal": "3628.00000000",
+            "release_time": "2023-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-09-01",
+            "value_raw": "3645",
+            "value_decimal": "3645.00000000",
+            "release_time": "2023-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-08-01",
+            "value_raw": "3662",
+            "value_decimal": "3662.00000000",
+            "release_time": "2023-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-07-01",
+            "value_raw": "3679",
+            "value_decimal": "3679.00000000",
+            "release_time": "2023-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-06-01",
+            "value_raw": "3696",
+            "value_decimal": "3696.00000000",
+            "release_time": "2023-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-05-01",
+            "value_raw": "3713",
+            "value_decimal": "3713.00000000",
+            "release_time": "2023-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-04-01",
+            "value_raw": "3730",
+            "value_decimal": "3730.00000000",
+            "release_time": "2023-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-03-01",
+            "value_raw": "3747",
+            "value_decimal": "3747.00000000",
+            "release_time": "2023-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-02-01",
+            "value_raw": "3764",
+            "value_decimal": "3764.00000000",
+            "release_time": "2023-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2023-01-01",
+            "value_raw": "3781",
+            "value_decimal": "3781.00000000",
+            "release_time": "2023-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-12-01",
+            "value_raw": "3798",
+            "value_decimal": "3798.00000000",
+            "release_time": "2022-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-11-01",
+            "value_raw": "3815",
+            "value_decimal": "3815.00000000",
+            "release_time": "2022-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-10-01",
+            "value_raw": "3832",
+            "value_decimal": "3832.00000000",
+            "release_time": "2022-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-09-01",
+            "value_raw": "3849",
+            "value_decimal": "3849.00000000",
+            "release_time": "2022-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-08-01",
+            "value_raw": "3866",
+            "value_decimal": "3866.00000000",
+            "release_time": "2022-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-07-01",
+            "value_raw": "3883",
+            "value_decimal": "3883.00000000",
+            "release_time": "2022-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-06-01",
+            "value_raw": "3900",
+            "value_decimal": "3900.00000000",
+            "release_time": "2022-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-05-01",
+            "value_raw": "3917",
+            "value_decimal": "3917.00000000",
+            "release_time": "2022-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-04-01",
+            "value_raw": "3934",
+            "value_decimal": "3934.00000000",
+            "release_time": "2022-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-03-01",
+            "value_raw": "3501",
+            "value_decimal": "3501.00000000",
+            "release_time": "2022-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-02-01",
+            "value_raw": "3518",
+            "value_decimal": "3518.00000000",
+            "release_time": "2022-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2022-01-01",
+            "value_raw": "3535",
+            "value_decimal": "3535.00000000",
+            "release_time": "2022-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-12-01",
+            "value_raw": "3552",
+            "value_decimal": "3552.00000000",
+            "release_time": "2021-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-11-01",
+            "value_raw": "3569",
+            "value_decimal": "3569.00000000",
+            "release_time": "2021-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-10-01",
+            "value_raw": "3586",
+            "value_decimal": "3586.00000000",
+            "release_time": "2021-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-09-01",
+            "value_raw": "3603",
+            "value_decimal": "3603.00000000",
+            "release_time": "2021-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-08-01",
+            "value_raw": "3620",
+            "value_decimal": "3620.00000000",
+            "release_time": "2021-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-07-01",
+            "value_raw": "3637",
+            "value_decimal": "3637.00000000",
+            "release_time": "2021-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-06-01",
+            "value_raw": "3654",
+            "value_decimal": "3654.00000000",
+            "release_time": "2021-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-05-01",
+            "value_raw": "3671",
+            "value_decimal": "3671.00000000",
+            "release_time": "2021-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-04-01",
+            "value_raw": "3688",
+            "value_decimal": "3688.00000000",
+            "release_time": "2021-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-03-01",
+            "value_raw": "3705",
+            "value_decimal": "3705.00000000",
+            "release_time": "2021-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-02-01",
+            "value_raw": "3722",
+            "value_decimal": "3722.00000000",
+            "release_time": "2021-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2021-01-01",
+            "value_raw": "3739",
+            "value_decimal": "3739.00000000",
+            "release_time": "2021-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-12-01",
+            "value_raw": "3756",
+            "value_decimal": "3756.00000000",
+            "release_time": "2020-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-11-01",
+            "value_raw": "3773",
+            "value_decimal": "3773.00000000",
+            "release_time": "2020-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-10-01",
+            "value_raw": "3790",
+            "value_decimal": "3790.00000000",
+            "release_time": "2020-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-09-01",
+            "value_raw": "3807",
+            "value_decimal": "3807.00000000",
+            "release_time": "2020-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-08-01",
+            "value_raw": "3824",
+            "value_decimal": "3824.00000000",
+            "release_time": "2020-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-07-01",
+            "value_raw": "3841",
+            "value_decimal": "3841.00000000",
+            "release_time": "2020-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-06-01",
+            "value_raw": "3858",
+            "value_decimal": "3858.00000000",
+            "release_time": "2020-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-05-01",
+            "value_raw": "3875",
+            "value_decimal": "3875.00000000",
+            "release_time": "2020-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-04-01",
+            "value_raw": "3892",
+            "value_decimal": "3892.00000000",
+            "release_time": "2020-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-03-01",
+            "value_raw": "3909",
+            "value_decimal": "3909.00000000",
+            "release_time": "2020-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-02-01",
+            "value_raw": "3926",
+            "value_decimal": "3926.00000000",
+            "release_time": "2020-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2020-01-01",
+            "value_raw": "3943",
+            "value_decimal": "3943.00000000",
+            "release_time": "2020-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-12-01",
+            "value_raw": "3510",
+            "value_decimal": "3510.00000000",
+            "release_time": "2019-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-11-01",
+            "value_raw": "3527",
+            "value_decimal": "3527.00000000",
+            "release_time": "2019-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-10-01",
+            "value_raw": "3544",
+            "value_decimal": "3544.00000000",
+            "release_time": "2019-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-09-01",
+            "value_raw": "3561",
+            "value_decimal": "3561.00000000",
+            "release_time": "2019-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-08-01",
+            "value_raw": "3578",
+            "value_decimal": "3578.00000000",
+            "release_time": "2019-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-07-01",
+            "value_raw": "3595",
+            "value_decimal": "3595.00000000",
+            "release_time": "2019-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-06-01",
+            "value_raw": "3612",
+            "value_decimal": "3612.00000000",
+            "release_time": "2019-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-05-01",
+            "value_raw": "3629",
+            "value_decimal": "3629.00000000",
+            "release_time": "2019-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-04-01",
+            "value_raw": "3646",
+            "value_decimal": "3646.00000000",
+            "release_time": "2019-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-03-01",
+            "value_raw": "3663",
+            "value_decimal": "3663.00000000",
+            "release_time": "2019-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-02-01",
+            "value_raw": "3680",
+            "value_decimal": "3680.00000000",
+            "release_time": "2019-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2019-01-01",
+            "value_raw": "3697",
+            "value_decimal": "3697.00000000",
+            "release_time": "2019-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-12-01",
+            "value_raw": "3714",
+            "value_decimal": "3714.00000000",
+            "release_time": "2018-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-11-01",
+            "value_raw": "3731",
+            "value_decimal": "3731.00000000",
+            "release_time": "2018-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-10-01",
+            "value_raw": "3748",
+            "value_decimal": "3748.00000000",
+            "release_time": "2018-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-09-01",
+            "value_raw": "3765",
+            "value_decimal": "3765.00000000",
+            "release_time": "2018-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-08-01",
+            "value_raw": "3782",
+            "value_decimal": "3782.00000000",
+            "release_time": "2018-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-07-01",
+            "value_raw": "3799",
+            "value_decimal": "3799.00000000",
+            "release_time": "2018-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-06-01",
+            "value_raw": "3816",
+            "value_decimal": "3816.00000000",
+            "release_time": "2018-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-05-01",
+            "value_raw": "3833",
+            "value_decimal": "3833.00000000",
+            "release_time": "2018-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-04-01",
+            "value_raw": "3850",
+            "value_decimal": "3850.00000000",
+            "release_time": "2018-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-03-01",
+            "value_raw": "3867",
+            "value_decimal": "3867.00000000",
+            "release_time": "2018-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-02-01",
+            "value_raw": "3884",
+            "value_decimal": "3884.00000000",
+            "release_time": "2018-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2018-01-01",
+            "value_raw": "3901",
+            "value_decimal": "3901.00000000",
+            "release_time": "2018-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-12-01",
+            "value_raw": "3918",
+            "value_decimal": "3918.00000000",
+            "release_time": "2017-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-11-01",
+            "value_raw": "3935",
+            "value_decimal": "3935.00000000",
+            "release_time": "2017-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-10-01",
+            "value_raw": "3502",
+            "value_decimal": "3502.00000000",
+            "release_time": "2017-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-09-01",
+            "value_raw": "3519",
+            "value_decimal": "3519.00000000",
+            "release_time": "2017-09-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-08-01",
+            "value_raw": "3536",
+            "value_decimal": "3536.00000000",
+            "release_time": "2017-08-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-07-01",
+            "value_raw": "3553",
+            "value_decimal": "3553.00000000",
+            "release_time": "2017-07-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-06-01",
+            "value_raw": "3570",
+            "value_decimal": "3570.00000000",
+            "release_time": "2017-06-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-05-01",
+            "value_raw": "3587",
+            "value_decimal": "3587.00000000",
+            "release_time": "2017-05-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-04-01",
+            "value_raw": "3604",
+            "value_decimal": "3604.00000000",
+            "release_time": "2017-04-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-03-01",
+            "value_raw": "3621",
+            "value_decimal": "3621.00000000",
+            "release_time": "2017-03-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-02-01",
+            "value_raw": "3638",
+            "value_decimal": "3638.00000000",
+            "release_time": "2017-02-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2017-01-01",
+            "value_raw": "3655",
+            "value_decimal": "3655.00000000",
+            "release_time": "2017-01-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2016-12-01",
+            "value_raw": "3672",
+            "value_decimal": "3672.00000000",
+            "release_time": "2016-12-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2016-11-01",
+            "value_raw": "3689",
+            "value_decimal": "3689.00000000",
+            "release_time": "2016-11-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2016-10-01",
+            "value_raw": "3706",
+            "value_decimal": "3706.00000000",
+            "release_time": "2016-10-20T08:30:00Z"
+        },
+        {
+            "ref_period": "2016-09-01",
+            "value_raw": "3723",
+            "value_decimal": "3723.00000000",
+            "release_time": "2016-09-20T08:30:00Z"
+        }
+    ]
+}

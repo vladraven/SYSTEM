@@ -1,0 +1,80 @@
+{
+    "indicator_key": "elderly_dependency_ratio",
+    "title": "Демографическая нагрузка 65+ (EDR)",
+    "provider": "statcan_vector",
+    "vector_id": 466668,
+    "product_id": "17100005",
+    "fetched_at": "2026-08-12T17:25:19Z",
+    "observations": [
+        {
+            "ref_period": "2025-07-01",
+            "value_raw": "41651653",
+            "value_decimal": "41651653.00000000",
+            "release_time": "2025-09-24T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2024-07-01",
+            "value_raw": "41262329",
+            "value_decimal": "41262329.00000000",
+            "release_time": "2025-09-24T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2023-07-01",
+            "value_raw": "40049088",
+            "value_decimal": "40049088.00000000",
+            "release_time": "2025-09-24T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2022-07-01",
+            "value_raw": "38950132",
+            "value_decimal": "38950132.00000000",
+            "release_time": "2025-09-24T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2021-07-01",
+            "value_raw": "38239864",
+            "value_decimal": "38239864.00000000",
+            "release_time": "2025-09-24T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2020-07-01",
+            "value_raw": "38028638",
+            "value_decimal": "38028638.00000000",
+            "release_time": "2024-02-21T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2019-07-01",
+            "value_raw": "37618495",
+            "value_decimal": "37618495.00000000",
+            "release_time": "2024-02-21T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2018-07-01",
+            "value_raw": "37072620",
+            "value_decimal": "37072620.00000000",
+            "release_time": "2024-02-21T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2017-07-01",
+            "value_raw": "36545075",
+            "value_decimal": "36545075.00000000",
+            "release_time": "2024-02-21T08:30",
+            "scalar_factor": 0
+        },
+        {
+            "ref_period": "2016-07-01",
+            "value_raw": "36110803",
+            "value_decimal": "36110803.00000000",
+            "release_time": "2024-02-21T08:30",
+            "scalar_factor": 0
+        }
+    ]
+}

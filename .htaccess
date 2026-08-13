@@ -1,0 +1,38 @@
+# STREAMING_CHUNK:Disabling directory browsing and restricting direct access to sensitive files...
+
+# Prevent directory listings
+Options -Indexes
+
+# Protect sensitive environment and system files from HTTP access
+<FilesMatch "^\.env|bootstrap\.php|PROMPT_SPECIFICATION\.md|composer\.(json|lock)|phinx\.php">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# STREAMING_CHUNK:Configuring URL rewriting engine and public directory routing...
+
+# URL Rewriting to public/index.php
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # If the request is already pointing to public/, pass through
+    RewriteCond %{REQUEST_URI} ^/public/ [NC]
+    RewriteRule ^ - [L]
+
+    # Serve static assets directly if they exist in the public directory
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -d
+    RewriteRule ^(.*)$ public/$1 [L]
+
+    # Route all other non-existing files and requests through public/index.php
+    RewriteRule ^ public/index.php [QSA,L]
+</IfModule>
+```eof
+
+The `.htaccess` file is now ready in the root directory. It ensures that Apache safely redirects all Web traffic directly to `public/index.php` while blocking external access to sensitive configuration files like `.env` and `bootstrap.php`.

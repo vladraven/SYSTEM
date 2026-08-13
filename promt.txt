@@ -1,0 +1,517 @@
+Промт-Спецификация системы макроэкономического мониторинга рисков Канады (MacroRisk)
+
+Версия спецификации: 1.5.0-comprehensive (Pure PHP Native Edition)
+Дата спецификации: 2026-08-12
+Тип проекта: автономная самостоятельная система
+Основной язык реализации: Чистый PHP 8.3+ (без Composer и внешних библиотек)
+Фреймворки и пакеты: Запрещены (Laravel, Symfony, Slim, Twig, Phinx, Doctrine, Composer и др.)
+Основная СУБД: MySQL 8.4 LTS или новее
+Storage engine: InnoDB
+Charset: utf8mb4
+Основная страна модели: Canada
+Основная локаль: en-CA
+Вторичная локаль: fr-CA, начиная с Phase 3
+
+1. Вводная инструкция агенту
+
+Ты автономный senior PHP architect и implementation agent.
+
+Твоя задача — реализовать полностью автономную, независимую систему макроэкономического мониторинга рисков Канады на чистом PHP 8.3+ с полным учётом циклических, структурно-демографических, фискальных и долговых факторов.
+
+Система строится с нуля без использования сторонних библиотек, вендоров и менеджеров пакетов (включая Composer). Автозагрузка классов, маршрутизация HTTP-запросов, работа с базой данных, проведение миграций, рендеринг HTML-представлений и вычисления выполняются исключительно средствами штатных расширений PHP 8.3+ (ext-bcmath, ext-pdo, ext-curl, ext-json, ext-mbstring).
+
+Если в рабочем окружении обнаружены сторонние пакеты, фреймворки, папка vendor или старый код с похожей бизнес-логикой, они не считаются источником истины. Реализация должна следовать только этой спецификации.
+
+Категорически запрещено использовать:
+
+Composer и любые сторонние зависимости из Packagist / папку vendor/.
+
+Фреймворки (Laravel, Symfony, Slim, CodeIgniter, Yii и т.д.).
+
+Сторонние библиотеки ORM/DB (Doctrine, Eloquent, RedBean).
+
+Сторонние утилиты миграций (Phinx, Flyway).
+
+Шаблонизаторы (Twig, Blade, Plates).
+
+Runtime LLM как production decision engine или для production narrative reports.
+
+Неофициальные wrappers как production dependency для StatCan, Bank of Canada, CMHC, CREA или OSFI.
+
+Прямые CMHC или CREA sources как production default.
+
+Native PHP float для расчётов весов, нормализации, risk scores или contribution values.
+
+Обязательно к использованию:
+
+PHP 8.3+ (Pure Native).
+
+Встроенный механизм автозагрузки через spl_autoload_register() (PSR-4 структура MacroRisk).
+
+Нативный PDO (ext-pdo_mysql) с подготовленными выражениями (Prepared Statements) для MySQL 8.4 LTS.
+
+Расширение ext-bcmath для всех математических операций, гарантирующее точность DECIMAL(24,8) и DECIMAL(10,4) без потери точности float.
+
+Нативный ext-curl для работы с официальными REST API (Statistics Canada WDS, Bank of Canada Valet, Open Gov CKAN).
+
+Нативный рендеринг HTML-представлений через штатный PHP (Phtml/PHP views).
+
+Нативный CLI-мигратор на PHP для автоматического накатывания DDL-схем в СУБД.
+
+2. Architecture Principles
+
+Система должна проектироваться не как «умный прогнозатор», а как прозрачный, аудируемый и детерминированный механизм оценки макроэкономических рисков на основе явно заданных данных, правил, конфигураций, версий и ограничений.
+
+Система оценивает макроэкономику через призму ликвидности, долга и демографии, полностью исключая эвристические «волновые теории» (циклы Кондратьева, Жюгляра и т.д.).
+
+Приоритеты системы:
+
+Correctness over feature count.
+
+Transparency over automation.
+
+Deterministic behavior over heuristics.
+
+Auditability over convenience.
+
+Modularity over monolithic implementations.
+
+Explicit failures over silent recovery.
+
+Explainability at every layer.
+
+Обязательный архитектурный принцип:
+
+Every production decision must be reproducible.
+
+3. Non-Goals
+
+Система не предназначена для того, чтобы:
+
+Предсказывать рецессии, обвалы рынков или гарантировать раннее обнаружение кризисов.
+
+Превосходить профессиональные эконометрические модели.
+
+Делать causal inference без явной методологической поддержки.
+
+Восстанавливать или «угадывать» недоступные данные.
+
+Использовать generative AI как production decision engine.
+
+Использовать эвристические модели (волновые теории, технический анализ) для расчёта риска.
+
+Автоматически принимать финансовые или инвестиционные решения.
+
+Представлять model-derived estimates как наблюдаемые факты.
+
+Использовать прямые CMHC или CREA источники как production default, если доступны StatCan/Open Government equivalents.
+
+Обязательное правило:
+
+The system must not pretend to know what the data cannot support.
+
+4. Scientific Integrity & ScientificIntegrityGuard
+
+Система явно разделяет: Observation, Transformation, Model output, Interpretation, Hypothesis.
+
+ScientificIntegrityGuard
+
+Модуль ScientificIntegrityGuard проверяет текстовые слои через case-insensitive regex matching. При обнаружении запрещённой фразы:
+
+Генерация/публикация блокируется (http_status = 422).
+
+Возвращается error_code = SCIENTIFIC_INTEGRITY_VIOLATION.
+
+Запись инцидента в audit_records.
+
+Список запрещённых фраз (Banned Phrases):
+
+will enter recession
+
+proves that / model proves
+
+guarantees / predicts with confidence / recession is certain
+
+statistically confirms (если N < 10)
+
+caused by (если причинно-следственная связь не утверждена)
+
+demographic collapse / inevitable bankruptcy
+
+ai will fully replace / immigration solves aging
+
+kondratiev / juglar / elliott wave / market cycle predicts
+
+5. Indicator Matrix (Required Implementation Scope)
+
+Система обязана поддерживать загрузку, трансформацию и расчет для следующих категорий индикаторов:
+
+5.1. Macro & Inflation (macro)
+
+CPI YoY / Core CPI: Инфляционное давление (StatCan).
+
+Labor Productivity: ВВП на отработанный час (StatCan Table 36-10-0206-01). Нормализация: lower_is_riskier.
+
+Bank of Canada Commodity Price Index (BCPI): Ресурсная база (BoC Valet). Нормализация: lower_is_riskier.
+
+Unemployment Rate: Стандартный slack рынка труда (StatCan).
+
+5.2. Financial & Liquidity (financial)
+
+Yield Curve Spread (10Y-2Y): Монетарная жесткость (BoC). Нормализация: outside_band_is_riskier или lower_is_riskier (инверсия).
+
+Financial Conditions Index (FCI): Доступность кредита (BoC). Нормализация: higher_is_riskier.
+
+Corporate High Yield Spread: Институциональный кредитный риск. Нормализация: higher_is_riskier.
+
+Household Debt Service Ratio (DSR): Доля дохода на обслуживание долга (StatCan Table 38-10-0238-01). Нормализация: higher_is_riskier.
+
+Household Debt to Disposable Income: Общий леверидж (StatCan Table 38-10-0235-01). Нормализация: higher_is_riskier.
+
+Business Insolvencies: Корпоративные банкротства (OSB). Нормализация: higher_is_riskier.
+
+5.3. Housing Imbalances (housing)
+
+NHPI / RPPI: Индексы цен на жилье (StatCan).
+
+Housing Starts to Population Growth Ratio: Композитный структурный индикатор. Нормализация: higher_is_riskier.
+
+5.4. Demographics & Fiscal (demographics, fiscal)
+
+Elderly Dependency Ratio (EDR): Доля 65+ (StatCan Table 17-10-0005-01).
+
+Government Deficit to GDP: Фискальный импульс/риск. Нормализация: higher_is_riskier.
+
+6. System Invariants & Mathematical Precision
+
+6.1 Risk Score Invariants
+
+0.0000 <= risk_score <= 100.0000.
+
+При 0 доступных индикаторах Score не рассчитывается (INSUFFICIENT_DATA).
+
+Поля risk_score, normalized_indicator_score, original_weight, effective_weight, contribution_value, coverage_ratio, frequency_discount хранятся строго как DECIMAL(10,4).
+
+Raw и transformed значения хранятся строго как DECIMAL(24,8).
+
+6.2 Coverage Invariants
+
+Production score рассчитывается только если одновременно:
+
+coverage_ratio >= 60.0000%.
+
+Все required индикаторы доступны.
+
+Доступно минимум 3 индикатора.
+
+Ни один используемый индикатор не имеет license_status = requires_license или unverified.
+
+Ни один индикатор не находится в блокирующем статусе валидации.
+
+Формула покрытия:
+coverage_ratio = (СУММА(original_weight_available) / СУММА(original_weight_configured)) * 100%
+
+6.3 Weight & Calculation Invariants
+
+Все веса >= 0. Сумма original_weight в конфигурации строго равна 100.0000%.
+
+При отсутствии индикаторов сумма effective_weight доступных индикаторов ренормализуется к 100.0000%.
+
+frequency_discount (0 < fd <= 1.0000) применяются исключительно к effective_weight после проверки покрытия (для квартальных и годовых показателей fd задается <= 0.7000).
+
+BCMath / Decimal Precision: Все вычисления весов, скоров и вкладов выполняются через bcmath. Нативный float в Risk Engine запрещён.
+
+7. Official Data Sources Policy
+
+Официальные источники кандидатов:
+
+Statistics Canada (StatCan WDS & Full Table Download): RESTful JSON API.
+
+Bank of Canada (Valet API): Финансовые условия, BCPI, кривые доходности.
+
+OSFI / OSB (Open Government Canada): Банкротства бизнеса, институциональные данные.
+
+Правило замены (StatCan First):
+
+Замена CREA HPI -> StatCan NHPI (Table 18-10-0205-01) и RPPI (Table 18-10-0169-01).
+
+Неофициальные обёртки, сторонние коммерческие сайты исключены из реестра production-источников.
+
+8. Bootstrap / Cold Start Policy
+
+Bootstrap Mode: Разрешён до публикации первого System Preset.
+
+Первые 14 дней: Публикация Production Score заблокирована до прохождения Первого Production System Preset.
+
+Условия 1-го Production Preset: >= 5 валидных series, >= 5 public_open series, >= 3 доступных индикаторов на дату винтажа, прохождение всех CI-гейтов и зафиксированный Worked Example.
+
+9. Error Taxonomy
+
+Коды ошибок:
+VALIDATION_ERROR (400), INVALID_CONFIGURATION (422), INVALID_CONFIGURATION_THRESHOLDS (422), INVALID_WEIGHT_SUM (422), NEGATIVE_WEIGHT (422), INSUFFICIENT_DATA (422), LOW_COVERAGE (422), REQUIRED_INDICATOR_MISSING (422), LICENSE_REQUIRED (403), LICENSE_UNVERIFIED (403), ACCESS_DENIED (403), AUTHENTICATION_REQUIRED (401), AUTHORIZATION_FAILED (403), SOURCE_UNAVAILABLE (503), SOURCE_TIMEOUT (503), SOURCE_SCHEMA_MISMATCH (502), STALE_MAPPING (503), DATA_PENDING (202), BACKTEST_VERSION_MISMATCH (409), SMALL_SAMPLE_BACKTEST (200 w/ warning), LOOK_AHEAD_BIAS_BLOCKED (422), SCIENTIFIC_INTEGRITY_VIOLATION (422), IMMUTABLE_CONFIGURATION (409), RATE_LIMIT_EXCEEDED (429), DECIMAL_PRECISION_VIOLATION (422), FLOAT_USAGE_FORBIDDEN (500/422).
+
+10. Risk Engine Mathematical Model
+
+10.1 Transformation Rules (Composite Indicators)
+
+Для составных индикаторов трансформация выполняется до нормализации.
+Пример (housing_starts_to_population):
+v_raw = Delta_Population_t / Housing_Starts_t
+
+10.2 Threshold Linear Normalization (threshold_linear)
+
+higher_is_riskier:
+
+v <= low_risk_threshold => score = 0.0000
+
+v >= high_risk_threshold => score = 100.0000
+
+Линейная интерполяция внутри.
+
+lower_is_riskier:
+
+v >= low_risk_threshold => score = 0.0000
+
+v <= high_risk_threshold => score = 100.0000
+
+distance_from_target_is_riskier:
+
+score = min(100.0000, (|v - target_value| / max_deviation) * 100)
+
+outside_band_is_riskier:
+
+Если safe_min <= v <= safe_max => score = 0.0000. За пределами полосы скалируется от 0 до 100 по границам low_risk_threshold / high_risk_threshold.
+
+10.3 Weight Adjustment & Discounting
+
+Базовая ренормализация доступных исходных весов:
+w_i_base = (w_i_orig / СУММА(w_j_orig по всем доступным)) * 100
+
+Применение frequency_discount (d_i):
+w_i_disc = w_i_base * d_i
+
+Итоговый effective_weight:
+w_i_eff = (w_i_disc / СУММА(w_j_disc по всем доступным)) * 100
+
+Вклад индикатора (contribution_value):
+c_i = (s_i * w_i_eff) / 100
+
+Итоговый risk_score:
+risk_score = СУММА(c_i по всем доступным)
+
+11. Appendix A: Worked Example (Test Fixture Subset)
+
+(Демонстрационный расчёт сабсета индикаторов, покрывающих разные категории)
+
+Конфигурация (Сумма 100%)
+
+Household DSR (Quarterly): w_orig = 20.0000%, required = true, fd = 0.7000.
+
+Housing Starts / Pop (Quarterly): w_orig = 20.0000%, required = false, fd = 0.7000.
+
+Yield Spread (Monthly): w_orig = 20.0000%, required = false, fd = 1.0000.
+
+Labor Productivity (Quarterly): w_orig = 20.0000%, required = false, fd = 0.7000.
+
+Business Insolvencies (Monthly): w_orig = 20.0000%, required = false, fd = 1.0000.
+
+Данные и нормализация
+
+DSR: val = 15.2000, low = 13.0000, high = 15.5000 (higher_is_riskier) => s_1 = 88.0000.
+
+Housing/Pop Ratio: val = 4.5000 (4.5 чел на 1 старт), low = 2.0000, high = 5.0000 (higher_is_riskier) => s_2 = 83.3333.
+
+Yield Spread: val = -0.5000, low = 1.0000, high = -1.0000 (lower_is_riskier) => s_3 = 75.0000.
+
+Productivity: val = 104.0000, low = 108.0000, high = 100.0000 (lower_is_riskier) => s_4 = 50.0000.
+
+Insolvencies (YoY %): val = 25.0000, low = 5.0000, high = 35.0000 (higher_is_riskier) => s_5 = 66.6667.
+
+Расчёт
+
+Coverage Ratio: 100.0000% (>= 60% => PASS).
+
+Дисконтированные веса (w_disc = w_orig * fd):
+
+DSR: 20.0000 * 0.7000 = 14.0000
+
+Housing: 20.0000 * 0.7000 = 14.0000
+
+Yield Spread: 20.0000 * 1.0000 = 20.0000
+
+Productivity: 20.0000 * 0.7000 = 14.0000
+
+Insolvencies: 20.0000 * 1.0000 = 20.0000
+
+Сумма w_disc = 82.0000
+
+Итоговые Effective Weights (w_eff):
+
+DSR: 14.0000 / 82.0000 * 100 = 17.0732%
+
+Housing: 14.0000 / 82.0000 * 100 = 17.0732%
+
+Yield Spread: 20.0000 / 82.0000 * 100 = 24.3902%
+
+Productivity: 14.0000 / 82.0000 * 100 = 17.0732%
+
+Insolvencies: 20.0000 / 82.0000 * 100 = 24.3902%
+
+Сумма w_eff = 100.0000%
+
+Вклады (c_i = s_i * w_i_eff / 100):
+
+DSR: 88.0000 * 0.170732 = 15.0244
+
+Housing: 83.3333 * 0.170732 = 14.2277
+
+Yield Spread: 75.0000 * 0.243902 = 18.2927
+
+Productivity: 50.0000 * 0.170732 = 8.5366
+
+Insolvencies: 66.6667 * 0.243902 = 16.2601
+
+Итоговый Risk Score:
+risk_score = 15.0244 + 14.2277 + 18.2927 + 8.5366 + 16.2601 = 72.3415 (Band: high)
+
+12. DDL Схема БД (MySQL 8.4 InnoDB utf8mb4)
+
+-- 1. DDL: Risk Score Results
+CREATE TABLE risk_score_results (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    score_key VARCHAR(128) NOT NULL UNIQUE,
+    configuration_version_id BIGINT UNSIGNED NOT NULL,
+    model_version_id BIGINT UNSIGNED NOT NULL,
+    vintage_date DATETIME(6) NOT NULL,
+    calculation_mode VARCHAR(32) NOT NULL,
+    calculation_status VARCHAR(64) NOT NULL,
+    risk_score DECIMAL(10,4) NULL,
+    risk_band VARCHAR(32) NULL,
+    coverage_ratio DECIMAL(10,4) NOT NULL,
+    demographic_pressure_index DECIMAL(10,4) NULL,
+    available_indicator_count INT UNSIGNED NOT NULL,
+    configured_indicator_count INT UNSIGNED NOT NULL,
+    required_indicator_missing BOOLEAN NOT NULL,
+    effective_weights_sum DECIMAL(10,4) NOT NULL,
+    data_cutoff_date DATETIME(6) NULL,
+    active_indicators_status_hash CHAR(64) NOT NULL,
+    calculation_hash CHAR(64) NOT NULL,
+    calculation_explanation TEXT NULL,
+    scientific_integrity_note TEXT NULL,
+    created_by BIGINT UNSIGNED NULL,
+    created_at DATETIME(6) NOT NULL,
+    INDEX idx_config_vintage (configuration_version_id, vintage_date),
+    INDEX idx_status (calculation_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 2. DDL: Indicator Contributions
+CREATE TABLE risk_score_indicator_contributions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    risk_score_result_id BIGINT UNSIGNED NOT NULL,
+    indicator_config_id BIGINT UNSIGNED NOT NULL,
+    series_id BIGINT UNSIGNED NOT NULL,
+    observation_id BIGINT UNSIGNED NULL,
+    snapshot_observation_id BIGINT UNSIGNED NULL,
+    raw_value DECIMAL(24,8) NULL,
+    transformed_value DECIMAL(24,8) NULL,
+    normalized_indicator_score DECIMAL(10,4) NULL,
+    original_weight DECIMAL(10,4) NOT NULL,
+    frequency_discount DECIMAL(10,4) NOT NULL DEFAULT 1.0000,
+    effective_weight DECIMAL(10,4) NULL,
+    contribution_value DECIMAL(10,4) NULL,
+    is_available BOOLEAN NOT NULL,
+    is_required BOOLEAN NOT NULL,
+    missing_reason VARCHAR(64) NULL,
+    release_date_quality VARCHAR(64) NULL,
+    warning_code VARCHAR(64) NULL,
+    created_at DATETIME(6) NOT NULL,
+    FOREIGN KEY (risk_score_result_id) REFERENCES risk_score_results(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3. DDL: Indicator Configs
+CREATE TABLE indicator_configs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    configuration_version_id BIGINT UNSIGNED NOT NULL,
+    series_id BIGINT UNSIGNED NOT NULL,
+    indicator_key VARCHAR(128) NOT NULL,
+    category ENUM('macro', 'financial', 'housing', 'demographics', 'fiscal') NOT NULL DEFAULT 'macro',
+    original_weight DECIMAL(10,4) NOT NULL,
+    is_required BOOLEAN NOT NULL DEFAULT FALSE,
+    transformation_type VARCHAR(64) NOT NULL,
+    normalization_method VARCHAR(64) NOT NULL,
+    direction_of_deterioration VARCHAR(64) NOT NULL,
+    low_risk_threshold DECIMAL(24,8) NULL,
+    high_risk_threshold DECIMAL(24,8) NULL,
+    target_value DECIMAL(24,8) NULL,
+    max_deviation DECIMAL(24,8) NULL,
+    safe_min DECIMAL(24,8) NULL,
+    safe_max DECIMAL(24,8) NULL,
+    clamp_min DECIMAL(24,8) NULL,
+    clamp_max DECIMAL(24,8) NULL,
+    maximum_allowed_weight DECIMAL(10,4) NULL,
+    frequency_discount DECIMAL(10,4) NOT NULL DEFAULT 1.0000,
+    risk_officer_override BOOLEAN NOT NULL DEFAULT FALSE,
+    override_reason TEXT NULL,
+    override_approved_by BIGINT UNSIGNED NULL,
+    production_allowed BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at DATETIME(6) NOT NULL,
+    UNIQUE KEY uq_config_indicator (configuration_version_id, indicator_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 4. DDL: Snapshot Observations
+CREATE TABLE snapshot_observations (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    snapshot_id BIGINT UNSIGNED NOT NULL,
+    series_id BIGINT UNSIGNED NOT NULL,
+    observation_id BIGINT UNSIGNED NOT NULL,
+    vintage_date DATETIME(6) NOT NULL,
+    release_date DATETIME(6) NULL,
+    estimated_release_date DATETIME(6) NULL,
+    release_date_quality VARCHAR(64) NOT NULL,
+    release_date_source VARCHAR(64) NOT NULL,
+    reproducibility_allowed BOOLEAN NOT NULL DEFAULT TRUE,
+    revision_number INT UNSIGNED NULL,
+    is_revision BOOLEAN NOT NULL DEFAULT FALSE,
+    previous_observation_id BIGINT UNSIGNED NULL,
+    quality_flag VARCHAR(64) NULL,
+    created_at DATETIME(6) NOT NULL,
+    UNIQUE KEY uq_snapshot_series_obs (snapshot_id, series_id, observation_id),
+    INDEX idx_series_vintage (series_id, vintage_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 5. DDL: Data Sources
+CREATE TABLE data_sources (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    source_key VARCHAR(64) NOT NULL UNIQUE,
+    display_name VARCHAR(255) NOT NULL,
+    source_type VARCHAR(64) NOT NULL,
+    base_url VARCHAR(1024) NOT NULL,
+    official_documentation_url VARCHAR(1024) NOT NULL,
+    terms_of_use_url VARCHAR(1024) NULL,
+    license_status ENUM('public_open', 'public_open_candidate', 'requires_license', 'unverified') NOT NULL DEFAULT 'unverified',
+    production_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+    notes TEXT NULL,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 6. DDL: Audit Records
+CREATE TABLE audit_records (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    audit_key VARCHAR(128) NOT NULL UNIQUE,
+    actor_user_id BIGINT UNSIGNED NULL,
+    actor_name VARCHAR(255) NULL,
+    actor_role VARCHAR(64) NULL,
+    actor_type VARCHAR(32) NOT NULL,
+    event_type VARCHAR(128) NOT NULL,
+    entity_type VARCHAR(128) NOT NULL,
+    entity_id BIGINT UNSIGNED NULL,
+    entity_key VARCHAR(128) NULL,
+    old_value_json JSON NULL,
+    new_value_json JSON NULL,
+    diff_json JSON NULL,
+    reason TEXT NULL,
+    created_at DATETIME(6) NOT NULL,
+    INDEX idx_entity (entity_type, entity_id),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
