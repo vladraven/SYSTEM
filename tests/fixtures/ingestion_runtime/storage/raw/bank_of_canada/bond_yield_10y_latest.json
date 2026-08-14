@@ -1,0 +1,31 @@
+{
+    "schema_version": 1,
+    "retrieved_at": "2026-08-14T19:05:05+00:00",
+    "response": {
+        "terms": {
+            "url": "https://www.bankofcanada.ca/terms/"
+        },
+        "observations": [
+            {
+                "d": "2026-07-01",
+                "V122487": {
+                    "v": "3.94"
+                }
+            },
+            {
+                "d": "2026-08-01",
+                "V122487": {
+                    "v": "3.88"
+                }
+            }
+        ]
+    },
+    "metadata": {
+        "seriesDetail": {
+            "V122487": {
+                "label": "Government of Canada benchmark bond yield, 10 year",
+                "description": "10 year benchmark bond yield."
+            }
+        }
+    }
+}

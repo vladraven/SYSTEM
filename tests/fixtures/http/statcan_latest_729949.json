@@ -1,0 +1,27 @@
+{
+    "status": "SUCCESS",
+    "object": {
+        "responseStatusCode": 0,
+        "productId": 34100143,
+        "coordinate": "1.1.1.0.0.0.0.0.0.0",
+        "vectorId": 729949,
+        "vectorDataPoint": [
+            {
+                "refPer": "2026-05-01",
+                "refPerRaw": "2026-05-01",
+                "value": 15210.0,
+                "decimals": 0,
+                "scalarFactorCode": 0,
+                "releaseTime": "2026-06-16T08:30"
+            },
+            {
+                "refPer": "2026-06-01",
+                "refPerRaw": "2026-06-01",
+                "value": 14900.0,
+                "decimals": 0,
+                "scalarFactorCode": 0,
+                "releaseTime": "2026-07-17T08:30"
+            }
+        ]
+    }
+}

@@ -1,0 +1,39 @@
+{
+    "schema_version": 1,
+    "risk_bands": {
+        "very_low": {
+            "min": "0.0000",
+            "max": "20.0000"
+        },
+        "low": {
+            "min": "20.0000",
+            "max": "40.0000"
+        },
+        "moderate": {
+            "min": "40.0000",
+            "max": "60.0000"
+        },
+        "high": {
+            "min": "60.0000",
+            "max": "80.0000"
+        },
+        "severe": {
+            "min": "80.0000",
+            "max": "100.0000"
+        }
+    },
+    "calculation": {
+        "min_coverage_ratio": "60.0000",
+        "min_eligible_indicators": 3
+    },
+    "classification_layers": {
+        "observation": "Observation",
+        "transformation": "Transformation",
+        "model_output": "Model Output",
+        "interpretation": "Interpretation",
+        "hypothesis": "Hypothesis"
+    },
+    "scientific_integrity": {
+        "disclaimer": "MacroRisk is a deterministic monitoring model. It is not a forecast or prediction engine."
+    }
+}

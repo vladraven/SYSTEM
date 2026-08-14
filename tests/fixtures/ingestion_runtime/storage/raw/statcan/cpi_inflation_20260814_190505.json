@@ -1,0 +1,46 @@
+{
+    "schema_version": 1,
+    "retrieved_at": "2026-08-14T19:05:05+00:00",
+    "series_info": {
+        "status": "SUCCESS",
+        "object": {
+            "responseStatusCode": 0,
+            "productId": 18100004,
+            "coordinate": "2.2.0.0.0.0.0.0.0.0",
+            "vectorId": 41690973,
+            "frequencyCode": 6,
+            "scalarFactorCode": 0,
+            "decimals": 1,
+            "terminated": 0,
+            "SeriesTitleEn": "Canada;All-items",
+            "memberUomCode": 17
+        }
+    },
+    "latest_periods": {
+        "status": "SUCCESS",
+        "object": {
+            "responseStatusCode": 0,
+            "productId": 18100004,
+            "coordinate": "2.2.0.0.0.0.0.0.0.0",
+            "vectorId": 41690973,
+            "vectorDataPoint": [
+                {
+                    "refPer": "2026-05-01",
+                    "refPerRaw": "2026-05-01",
+                    "value": "3.8",
+                    "decimals": 1,
+                    "scalarFactorCode": 0,
+                    "releaseTime": "2026-06-16T08:30"
+                },
+                {
+                    "refPer": "2026-06-01",
+                    "refPerRaw": "2026-06-01",
+                    "value": "4.1",
+                    "decimals": 1,
+                    "scalarFactorCode": 0,
+                    "releaseTime": "2026-07-17T08:30"
+                }
+            ]
+        }
+    }
+}

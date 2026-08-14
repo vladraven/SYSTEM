@@ -1,0 +1,46 @@
+{
+    "schema_version": 1,
+    "retrieved_at": "2026-08-14T19:05:05+00:00",
+    "series_info": {
+        "status": "SUCCESS",
+        "object": {
+            "responseStatusCode": 0,
+            "productId": 14100287,
+            "coordinate": "1.7.1.1.1.1.0.0.0.0",
+            "vectorId": 2062815,
+            "frequencyCode": 6,
+            "scalarFactorCode": 0,
+            "decimals": 1,
+            "terminated": 0,
+            "SeriesTitleEn": "Canada;Unemployment rate;Total - Gender;15 years and over;Estimate;Seasonally adjusted",
+            "memberUomCode": 239
+        }
+    },
+    "latest_periods": {
+        "status": "SUCCESS",
+        "object": {
+            "responseStatusCode": 0,
+            "productId": 14100287,
+            "coordinate": "1.7.1.1.1.1.0.0.0.0",
+            "vectorId": 2062815,
+            "vectorDataPoint": [
+                {
+                    "refPer": "2026-05-01",
+                    "refPerRaw": "2026-05-01",
+                    "value": "6.4",
+                    "decimals": 1,
+                    "scalarFactorCode": 0,
+                    "releaseTime": "2026-06-06T08:30"
+                },
+                {
+                    "refPer": "2026-06-01",
+                    "refPerRaw": "2026-06-01",
+                    "value": "6.3",
+                    "decimals": 1,
+                    "scalarFactorCode": 0,
+                    "releaseTime": "2026-07-10T08:30"
+                }
+            ]
+        }
+    }
+}

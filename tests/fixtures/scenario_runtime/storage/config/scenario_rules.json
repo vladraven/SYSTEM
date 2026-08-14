@@ -1,0 +1,69 @@
+{
+    "schema_version": 1,
+    "classification": "hypothesis",
+    "disclaimer": "These scenario branches are analytical hypotheses only, not forecasts or predictions. They are based on historical patterns and are informational only.",
+    "rules": [
+        {
+            "id": "cpi_surprise_high",
+            "trigger_indicator": "cpi_inflation",
+            "trigger_direction": "above",
+            "trigger_threshold": "3.50000000",
+            "classification": "hypothesis",
+            "disclaimer": "This is an analytical hypothesis derived from historical Bank of Canada policy patterns, not a prediction.",
+            "methodology_note": "Based on descriptive historical frequency of Bank of Canada rate responses to CPI readings above 3.5% over 2010-2024. Informational only; this is not a statistical forecast model.",
+            "branches": [
+                {
+                    "id": "rate_increase_fast",
+                    "name": "Accelerated Rate Response",
+                    "description": "Historical pattern: CPI above 3.5% has often been followed by consecutive policy-tightening meetings. This branch represents the more frequent historical response pattern.",
+                    "probability_weight": "60.0000",
+                    "time_window": "1-3 policy meetings (~6-18 weeks)",
+                    "affected_indicators": {
+                        "policy_rate": {
+                            "direction": "up",
+                            "range": "+0.25 to +0.75 percentage points"
+                        },
+                        "bond_yield_10y": {
+                            "direction": "up",
+                            "range": "+0.10 to +0.40 percentage points"
+                        },
+                        "housing_starts": {
+                            "direction": "down",
+                            "range": "possible softening; magnitude uncertain"
+                        }
+                    }
+                },
+                {
+                    "id": "rate_increase_gradual",
+                    "name": "Gradual Rate Response",
+                    "description": "Historical pattern: the Bank of Canada may treat inflation pressure as partly transitory and respond with a single measured increase while monitoring later releases.",
+                    "probability_weight": "30.0000",
+                    "time_window": "1-2 policy meetings (~6-12 weeks)",
+                    "affected_indicators": {
+                        "policy_rate": {
+                            "direction": "up",
+                            "range": "+0.25 percentage points"
+                        },
+                        "bond_yield_10y": {
+                            "direction": "neutral_to_up",
+                            "range": "-0.10 to +0.20 percentage points"
+                        }
+                    }
+                },
+                {
+                    "id": "rate_hold",
+                    "name": "Hold and Monitor",
+                    "description": "Historical pattern: the Bank of Canada may hold the policy rate steady while citing transitory factors, uncertainty, or offsetting economic weakness.",
+                    "probability_weight": "10.0000",
+                    "time_window": "1-2 policy meetings (~6-12 weeks)",
+                    "affected_indicators": {
+                        "policy_rate": {
+                            "direction": "neutral",
+                            "range": "no change expected"
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
