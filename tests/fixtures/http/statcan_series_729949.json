@@ -1,0 +1,15 @@
+{
+    "status": "SUCCESS",
+    "object": {
+        "responseStatusCode": 0,
+        "productId": 34100143,
+        "coordinate": "1.1.1.0.0.0.0.0.0.0",
+        "vectorId": 729949,
+        "frequencyCode": 6,
+        "scalarFactorCode": 0,
+        "decimals": 0,
+        "terminated": 0,
+        "SeriesTitleEn": "Canada;Housing starts;Total units",
+        "memberUomCode": 0
+    }
+}

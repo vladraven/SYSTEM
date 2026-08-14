@@ -1,0 +1,40 @@
+{
+    "schema_version": 1,
+    "indicator_key": "cpi_inflation",
+    "title": "CPI All-items Inflation (Year-over-Year %)",
+    "status": "ok",
+    "classification": {
+        "observation": "Observation",
+        "transformation": "Transformation"
+    },
+    "source_key": "statcan_wds",
+    "source_series_id": "41690973",
+    "source_series_title": "Canada;All-items",
+    "source_link": "https://www150.statcan.gc.ca/t1/wds/rest/getSeriesInfoFromVector",
+    "frequency": "monthly",
+    "unit": "percent_yoy",
+    "source_unit": "cpi_index",
+    "retrieved_at": "2026-08-14T19:05:34Z",
+    "transformation_method": "year_over_year_percent_change",
+    "transformation_note": "Derived from the CPI index and the same reference month 12 months earlier.",
+    "observations": [
+        {
+            "reference_period": "2025-06-01",
+            "observed_at": "2025-06-01",
+            "release_time": "2025-07-15T08:30",
+            "raw_value": "164.40000000",
+            "observation_value": "164.40000000",
+            "transformed_value": null,
+            "source_status": "official"
+        },
+        {
+            "reference_period": "2026-06-01",
+            "observed_at": "2026-06-01",
+            "release_time": "2026-07-20T08:30",
+            "raw_value": "169.00000000",
+            "observation_value": "169.00000000",
+            "transformed_value": "2.79805353",
+            "source_status": "official"
+        }
+    ]
+}

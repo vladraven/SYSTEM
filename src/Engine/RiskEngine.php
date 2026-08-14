@@ -4,267 +4,465 @@ declare(strict_types=1);
 
 namespace MacroRisk\Engine;
 
-use MacroRisk\DecimalMath;
-use Exception;
+use MacroRisk\Core\Hash\CanonicalHasher;
+use MacroRisk\Core\Math\Decimal;
+use RuntimeException;
 
-/**
- * MacroRisk Risk Engine (v1.5.0-comprehensive / Pure PHP Native)
- *
- * Deterministic mathematical risk calculation engine adhering strictly to BCMath decimal
- * arithmetic. Completely excludes native PHP floats to prevent IEEE 754 precision loss.
- */
 final class RiskEngine
 {
-    public const MIN_COVERAGE_RATIO = '60.0000';
-    public const MIN_INDICATORS_COUNT = 3;
-
-    /**
-     * Computes the macroeconomic risk score from a set of configured indicators and current snapshot values.
-     *
-     * @param array<string, array<string, mixed>> $indicatorConfigs Array of indicator configurations indexed by indicator_key.
-     * @param array<string, string> $observations Array of raw observation values indexed by indicator_key.
-     * @return array<string, mixed> Structured result matching risk_score_results and risk_score_indicator_contributions schema.
-     */
-    public function calculateScore(array $indicatorConfigs, array$observations): array
-    {
-        if (empty($indicatorConfigs)) {
-            throw new Exception("INSUFFICIENT_DATA: No indicator configurations provided.");
+    public function calculate(
+        array $indicatorConfigs,
+        array $snapshotIndicators,
+        array $systemConfig,
+        array $context = [],
+        string $calculationMode = 'production'
+    ): array {
+        if ($indicatorConfigs === []) {
+            throw new RuntimeException('At least one indicator configuration is required.');
         }
 
-        $configuredCount = count($indicatorConfigs);$configuredWeightsSum = '0.0000';
-        $availableWeightsSum = '0.0000';$availableCount = 0;
-        $requiredMissing = false;
+        $totalConfiguredWeight = Decimal::score('0.0000');
 
-        $processedIndicators = [];
+        foreach ($indicatorConfigs as $config) {
+            $totalConfiguredWeight = $totalConfiguredWeight->add(
+                Decimal::score((string) ($config['original_weight'] ?? '0.0000'))
+            );
+        }
 
-        // 1. Initial Pass: Validate configurations and compute raw/available weights
-        foreach ($indicatorConfigs as $key =>$config) {
-            $origWeight = DecimalMath::clean((string)($config['original_weight'] ?? '0.0000'), DecimalMath::SCALE_SCORE);
-            $isRequired = (bool)($config['is_required'] ?? false);
-            $configuredWeightsSum = DecimalMath::add($configuredWeightsSum,$origWeight, DecimalMath::SCALE_SCORE);
+        if ($totalConfiguredWeight->compareTo(Decimal::score('100.0000')) !== 0) {
+            throw new RuntimeException('Configured original weights must sum exactly to 100.0000.');
+        }
 
-            $rawVal = isset($observations[$key]) ? DecimalMath::clean((string)$observations[$key], DecimalMath::SCALE_RAW) : null;
-            $isAvailable = ($rawVal !== null);
+        $minCoverage = Decimal::score((string) ($systemConfig['calculation']['min_coverage_ratio'] ?? '60.0000'));
+        $minEligibleIndicators = (int) ($systemConfig['calculation']['min_eligible_indicators'] ?? 3);
+        $vintageDate = (string) ($context['vintage_date'] ?? gmdate('c'));
+        $configurationVersion = (string) ($context['configuration_version'] ?? 'unknown');
+        $modelVersion = (string) ($context['model_version'] ?? 'unknown');
+        $configurationHash = (string) ($context['configuration_hash'] ?? CanonicalHasher::hash($indicatorConfigs));
+        $systemConfigHash = (string) ($context['system_config_hash'] ?? CanonicalHasher::hash($systemConfig));
 
-            if ($isAvailable) {
-                $availableCount++;$availableWeightsSum = DecimalMath::add($availableWeightsSum,$origWeight, DecimalMath::SCALE_SCORE);
-            } elseif ($isRequired) {$requiredMissing = true;
+        $configuredCount = count($indicatorConfigs);
+        $eligibleCount = 0;
+        $eligibleWeight = Decimal::score('0.0000');
+        $requiredMissingKeys = [];
+        $noHistoricalKeys = [];
+        $eligibleKeys = [];
+        $details = [];
+        $selectedObservations = [];
+        $sourceSeriesIdentifiers = [];
+
+        foreach ($indicatorConfigs as $indicatorKey => $config) {
+            $snapshot = $snapshotIndicators[$indicatorKey] ?? [];
+            $originalWeightScore = Decimal::score((string) ($config['original_weight'] ?? '0.0000'));
+            $originalWeightRaw = $originalWeightScore->withScale(Decimal::SCALE_RAW);
+            $frequencyDiscountScore = Decimal::score((string) ($config['frequency_discount'] ?? '1.0000'));
+            $frequencyDiscountRaw = $frequencyDiscountScore->withScale(Decimal::SCALE_RAW);
+            $isRequired = (bool) ($config['is_required'] ?? false);
+            $missingReason = isset($snapshot['missing_reason']) && is_string($snapshot['missing_reason'])
+                ? $snapshot['missing_reason']
+                : null;
+            $status = isset($snapshot['status']) && is_string($snapshot['status'])
+                ? $snapshot['status']
+                : 'missing';
+            $eligible = false;
+            $transformedValue = null;
+            $observationValue = isset($snapshot['observation_value']) && is_string($snapshot['observation_value'])
+                ? Decimal::raw($snapshot['observation_value'])->toString()
+                : null;
+
+            if (
+                isset($snapshot['value'])
+                && is_string($snapshot['value'])
+                && $snapshot['value'] !== ''
+                && in_array($status, ['ok', 'cached', 'user_override'], true)
+            ) {
+                $transformedValue = Decimal::raw($snapshot['value'])->toString();
+                $eligible = true;
             }
 
-            $processedIndicators[$key] = [
-                'config'         => $config,
-                'key'            => $key,
-                'raw_value'      => $rawVal,
-                'is_available'   => $isAvailable,
-                'is_required'    => $isRequired,
-                'original_weight'=> $origWeight,
-                'freq_discount'  => DecimalMath::clean((string)($config['frequency_discount'] ?? '1.0000'), DecimalMath::SCALE_SCORE),
+            if ($eligible) {
+                $eligibleCount++;
+                $eligibleKeys[] = $indicatorKey;
+                $eligibleWeight = $eligibleWeight->add($originalWeightScore);
+            } elseif ($isRequired) {
+                $requiredMissingKeys[] = $indicatorKey;
+            }
+
+            if ($missingReason === 'no_historical_data') {
+                $noHistoricalKeys[] = $indicatorKey;
+            }
+
+            $selectedObservations[$indicatorKey] = $transformedValue;
+            $sourceSeriesIdentifiers[$indicatorKey] = [
+                'source_key' => (string) ($config['source_key'] ?? ''),
+                'source_series_id' => (string) ($config['source_series_id'] ?? ''),
+            ];
+
+            $details[$indicatorKey] = [
+                'indicator_key' => $indicatorKey,
+                'title' => (string) ($config['title'] ?? $indicatorKey),
+                'category' => (string) ($config['category'] ?? 'unknown'),
+                'classification' => [
+                    'observation' => 'Observation',
+                    'transformation' => 'Transformation',
+                    'model_output' => 'Model Output',
+                ],
+                'source_key' => (string) ($config['source_key'] ?? ''),
+                'source_series_id' => (string) ($config['source_series_id'] ?? ''),
+                'source_link' => isset($snapshot['source_link']) && is_string($snapshot['source_link']) ? $snapshot['source_link'] : null,
+                'source_series_title' => isset($config['source_series_title']) ? (string) $config['source_series_title'] : null,
+                'reference_period' => isset($snapshot['reference_period']) && is_string($snapshot['reference_period']) ? $snapshot['reference_period'] : null,
+                'release_time' => isset($snapshot['release_time']) && is_string($snapshot['release_time']) ? $snapshot['release_time'] : null,
+                'retrieved_at' => isset($snapshot['retrieved_at']) && is_string($snapshot['retrieved_at']) ? $snapshot['retrieved_at'] : null,
+                'observation_value' => $observationValue,
+                'transformed_value' => $transformedValue,
+                'original_weight' => $originalWeightScore->toString(),
+                'frequency_discount' => $frequencyDiscountScore->toString(),
+                'effective_weight' => '0.0000',
+                'discounted_weight' => '0.00000000',
+                'normalized_score' => null,
+                'contribution' => null,
+                'is_required' => $isRequired,
+                'is_eligible' => $eligible,
+                'status' => $status,
+                'missing_reason' => $eligible ? null : ($missingReason ?? 'not_available'),
+                'transformation_method' => isset($config['transformation_method']) ? (string) $config['transformation_method'] : 'identity',
+                'transformation_note' => isset($config['transformation_note']) ? (string) $config['transformation_note'] : null,
+                'unit' => isset($config['unit']) ? (string) $config['unit'] : null,
+                'source_unit' => isset($config['source_unit']) ? (string) $config['source_unit'] : null,
+                '_original_weight_raw' => $originalWeightRaw,
+                '_frequency_discount_raw' => $frequencyDiscountRaw,
             ];
         }
 
-        // Verify total configured weights sum equals 100.0000%
-        if (DecimalMath::comp($configuredWeightsSum, '100.0000', DecimalMath::SCALE_SCORE) !== 0) {
-            throw new Exception("INVALID_WEIGHT_SUM: Total configured weights must equal 100.0000%. Given: {$configuredWeightsSum}");
+        $coverageRatio = $eligibleWeight
+            ->withScale(Decimal::SCALE_RAW)
+            ->divide($totalConfiguredWeight->withScale(Decimal::SCALE_RAW))
+            ->multiply(Decimal::raw('100.00000000'))
+            ->rounded(Decimal::SCALE_SCORE);
+
+        $status = 'ok';
+
+        if ($eligibleCount === 0 && count($noHistoricalKeys) === $configuredCount) {
+            $status = 'missing_no_historical_data';
+        } elseif ($eligibleCount < $minEligibleIndicators) {
+            $status = 'insufficient_data';
+        } elseif ($requiredMissingKeys !== []) {
+            $status = 'required_indicator_missing';
+        } elseif ($coverageRatio->compareTo($minCoverage) < 0) {
+            $status = 'low_coverage';
         }
 
-        // Compute coverage ratio: (SUM(available_orig_weights) / SUM(configured_orig_weights)) * 100
-        $coverageRatio = DecimalMath::mul(
-            DecimalMath::div($availableWeightsSum,$configuredWeightsSum, DecimalMath::SCALE_RAW),
-            '100.0000',
-            DecimalMath::SCALE_SCORE
-        );
+        $effectiveWeights = [];
+        $normalizedScores = [];
+        $contributions = [];
+        $riskScore = null;
+        $riskBand = null;
+        $effectiveWeightSum = Decimal::score('0.0000');
 
-        // 2. Validate Coverage Invariants
-        if ($availableCount < self::MIN_INDICATORS_COUNT) {
-            throw new Exception("INSUFFICIENT_DATA: Minimum " . self::MIN_INDICATORS_COUNT . " available indicators required. Available: {$availableCount}");
-        }
+        if ($status === 'ok') {
+            $discountedWeights = [];
+            $discountedWeightSum = Decimal::raw('0.00000000');
 
-        if (DecimalMath::comp($coverageRatio, self::MIN_COVERAGE_RATIO, DecimalMath::SCALE_SCORE) < 0) {
-            throw new Exception("LOW_COVERAGE: Coverage ratio {$coverageRatio}% is below minimum required " . self::MIN_COVERAGE_RATIO . "%");
-        }
-
-        if ($requiredMissing) {
-            throw new Exception("REQUIRED_INDICATOR_MISSING: One or more required indicators are missing from the current snapshot.");
-        }
-
-        // 3. Weight Discounting & Renormalization
-        // Step A: Base Renormalization -> w_i_base = (w_i_orig / SUM(w_available_orig)) * 100
-        // Step B: Frequency Discounting -> w_i_disc = w_i_base * fd_i
-        $discountedWeightsSum = '0.0000';
-
-        foreach ($processedIndicators as $key => &$item) {
-            if (!$item['is_available']) {
-                $item['effective_weight'] = '0.0000';$item['normalized_score'] = null;
-                $item['contribution_value'] = null;
-                continue;
+            foreach ($eligibleKeys as $indicatorKey) {
+                $discounted = $details[$indicatorKey]['_original_weight_raw']
+                    ->multiply($details[$indicatorKey]['_frequency_discount_raw']);
+                $discountedWeights[$indicatorKey] = $discounted;
+                $details[$indicatorKey]['discounted_weight'] = $discounted->toString();
+                $discountedWeightSum = $discountedWeightSum->add($discounted);
             }
 
-            $baseWeight = DecimalMath::mul(
-                DecimalMath::div($item['original_weight'],$availableWeightsSum, DecimalMath::SCALE_RAW),
-                '100.0000',
-                DecimalMath::SCALE_RAW
-            );
+            $effectiveWeightRaw = [];
 
-            $discWeight = DecimalMath::mul($baseWeight,$item['freq_discount'], DecimalMath::SCALE_RAW);
-            $item['disc_weight'] =$discWeight;
-
-            $discountedWeightsSum = DecimalMath::add($discountedWeightsSum,$discWeight, DecimalMath::SCALE_RAW);
-        }
-        unset($item);
-
-        // Step C: Final Effective Weights -> w_i_eff = (w_i_disc / SUM(w_disc)) * 100
-        // Step D: Calculate Normalized Indicator Scores & Contribution Values
-        $totalRiskScore = '0.0000';
-        $effectiveWeightsSum = '0.0000';$contributions = [];
-
-        foreach ($processedIndicators as $key =>$item) {
-            if (!$item['is_available']) {
-                $contributions[$key] = [
-                    'indicator_key'            => $key,
-                    'raw_value'                => null,
-                    'transformed_value'        => null,
-                    'normalized_indicator_score'=> null,
-                    'original_weight'          => $item['original_weight'],
-                    'frequency_discount'       => $item['freq_discount'],
-                    'effective_weight'         => '0.0000',
-                    'contribution_value'       => '0.0000',
-                    'is_available'             => false,
-                    'is_required'              => $item['is_required'],
-                    'missing_reason'           => 'DATA_UNAVAILABLE_AT_VINTAGE',
-                ];
-                continue;
+            foreach ($eligibleKeys as $indicatorKey) {
+                $effectiveWeightRaw[$indicatorKey] = $discountedWeights[$indicatorKey]
+                    ->divide($discountedWeightSum)
+                    ->multiply(Decimal::raw('100.00000000'));
             }
 
-            $effWeight = DecimalMath::mul(
-                DecimalMath::div($item['disc_weight'],$discountedWeightsSum, DecimalMath::SCALE_RAW),
-                '100.0000',
-                DecimalMath::SCALE_SCORE
-            );
-            $effectiveWeightsSum = DecimalMath::add($effectiveWeightsSum,$effWeight, DecimalMath::SCALE_SCORE);
+            $effectiveWeights = $this->reconcileEffectiveWeights($effectiveWeightRaw, $details);
+            $riskScoreRaw = Decimal::raw('0.00000000');
 
-            $normScore =$this->normalizeValue($item['raw_value'],$item['config']);
-            
-            // Contribution: c_i = (score_i * effWeight_i) / 100
-            $contribution = DecimalMath::div(
-                DecimalMath::mul($normScore,$effWeight, DecimalMath::SCALE_RAW),
-                '100.0000',
-                DecimalMath::SCALE_SCORE
-            );
+            foreach ($eligibleKeys as $indicatorKey) {
+                $normalized = $this->normalize(
+                    Decimal::raw((string) $details[$indicatorKey]['transformed_value']),
+                    $indicatorConfigs[$indicatorKey]
+                );
+                $effectiveWeight = Decimal::score($effectiveWeights[$indicatorKey]);
+                $contribution = $normalized
+                    ->withScale(Decimal::SCALE_RAW)
+                    ->multiply($effectiveWeight->withScale(Decimal::SCALE_RAW))
+                    ->divide(Decimal::raw('100.00000000'))
+                    ->rounded(Decimal::SCALE_SCORE);
 
-            $totalRiskScore = DecimalMath::add($totalRiskScore,$contribution, DecimalMath::SCALE_SCORE);
+                $details[$indicatorKey]['effective_weight'] = $effectiveWeight->toString();
+                $details[$indicatorKey]['normalized_score'] = $normalized->toString();
+                $details[$indicatorKey]['contribution'] = $contribution->toString();
+                $effectiveWeightSum = $effectiveWeightSum->add($effectiveWeight);
+                $normalizedScores[$indicatorKey] = $normalized->toString();
+                $contributions[$indicatorKey] = $contribution->toString();
+                $riskScoreRaw = $riskScoreRaw->add($contribution->withScale(Decimal::SCALE_RAW));
+            }
 
-            $contributions[$key] = [
-                'indicator_key'            => $key,
-                'raw_value'                => $item['raw_value'],
-                'transformed_value'        => $item['raw_value'], // Direct linear transform
-                'normalized_indicator_score'=> $normScore,
-                'original_weight'          => $item['original_weight'],
-                'frequency_discount'       => $item['freq_discount'],
-                'effective_weight'         => $effWeight,
-                'contribution_value'       => $contribution,
-                'is_available'             => true,
-                'is_required'              => $item['is_required'],
-                'missing_reason'           => null,
-            ];
+            foreach ($indicatorConfigs as $indicatorKey => $_config) {
+                $effectiveWeights[$indicatorKey] = $effectiveWeights[$indicatorKey] ?? '0.0000';
+                $normalizedScores[$indicatorKey] = $normalizedScores[$indicatorKey] ?? null;
+                $contributions[$indicatorKey] = $contributions[$indicatorKey] ?? null;
+            }
+
+            $riskScoreDecimal = $riskScoreRaw->rounded(Decimal::SCALE_SCORE);
+            $riskScore = $riskScoreDecimal->toString();
+            $riskBand = $this->resolveRiskBand($riskScoreDecimal, $systemConfig['risk_bands'] ?? []);
+        } else {
+            foreach ($indicatorConfigs as $indicatorKey => $_config) {
+                $effectiveWeights[$indicatorKey] = '0.0000';
+                $normalizedScores[$indicatorKey] = null;
+                $contributions[$indicatorKey] = null;
+            }
         }
 
-        // Clamp total risk score between 0.0000 and 100.0000
-        $finalScore = DecimalMath::max('0.0000', DecimalMath::min('100.0000', $totalRiskScore, DecimalMath::SCALE_SCORE), DecimalMath::SCALE_SCORE);$riskBand = $this->determineRiskBand($finalScore);
+        foreach ($details as $indicatorKey => $detail) {
+            unset(
+                $details[$indicatorKey]['_original_weight_raw'],
+                $details[$indicatorKey]['_frequency_discount_raw']
+            );
+        }
+
+        $validationStatuses = [
+            'weight_sum_valid' => true,
+            'coverage_ratio' => $coverageRatio->toString(),
+            'coverage_threshold' => $minCoverage->toString(),
+            'coverage_passed' => $coverageRatio->compareTo($minCoverage) >= 0,
+            'eligible_indicator_count' => $eligibleCount,
+            'min_eligible_indicators' => $minEligibleIndicators,
+            'eligible_indicator_count_passed' => $eligibleCount >= $minEligibleIndicators,
+            'required_indicators_present' => $requiredMissingKeys === [],
+            'required_indicator_missing_keys' => $requiredMissingKeys,
+            'missing_no_historical_data_keys' => $noHistoricalKeys,
+        ];
+
+        $hashPayload = [
+            'model_version' => $modelVersion,
+            'configuration_version' => $configurationVersion,
+            'configuration_hash' => $configurationHash,
+            'system_config_hash' => $systemConfigHash,
+            'vintage_date' => $vintageDate,
+            'calculation_mode' => $calculationMode,
+            'selected_observations' => $selectedObservations,
+            'source_series_identifiers' => $sourceSeriesIdentifiers,
+            'validation_statuses' => $validationStatuses,
+            'effective_weights' => $effectiveWeights,
+            'normalized_scores' => $normalizedScores,
+            'contributions' => $contributions,
+            'calculation_status' => $status,
+            'risk_score' => $riskScore,
+            'risk_band' => $riskBand,
+        ];
+
+        $calculationHash = CanonicalHasher::hash($hashPayload);
 
         return [
-            'risk_score'                 => $finalScore,
-            'risk_band'                  => $riskBand,
-            'coverage_ratio'             => $coverageRatio,
-            'available_indicator_count'  => $availableCount,
+            'model_version' => $modelVersion,
+            'configuration_version' => $configurationVersion,
+            'configuration_hash' => $configurationHash,
+            'system_config_hash' => $systemConfigHash,
+            'vintage_date' => $vintageDate,
+            'calculation_mode' => $calculationMode,
+            'calculation_status' => $status,
+            'risk_score' => $riskScore,
+            'risk_band' => $riskBand,
+            'coverage_ratio' => $coverageRatio->toString(),
+            'available_indicator_count' => $eligibleCount,
+            'eligible_indicator_count' => $eligibleCount,
             'configured_indicator_count' => $configuredCount,
-            'required_indicator_missing' => false,
-            'effective_weights_sum'      => $effectiveWeightsSum,
-            'contributions'              => $contributions,
+            'required_indicator_missing' => $requiredMissingKeys !== [],
+            'required_indicator_missing_keys' => $requiredMissingKeys,
+            'selected_observations' => $selectedObservations,
+            'source_series_identifiers' => $sourceSeriesIdentifiers,
+            'validation_statuses' => $validationStatuses,
+            'effective_weights' => $effectiveWeights,
+            'normalized_scores' => $normalizedScores,
+            'contributions' => $contributions,
+            'effective_weights_sum' => $effectiveWeightSum->toString(),
+            'indicators' => $details,
+            'calculation_hash' => $calculationHash,
         ];
     }
 
-    /**
-     * Normalizes a raw observation value to a 0.0000–100.0000 risk score based on configuration thresholds.
-     */
-    public function normalizeValue(string $rawVal, array$config): string
+    private function normalize(Decimal $value, array $config): Decimal
     {
-        $method    = (string)($config['normalization_method'] ?? 'threshold_linear');
-        $direction = (string)($config['direction_of_deterioration'] ?? 'higher_is_riskier');
-
-        $val  = DecimalMath::clean($rawVal, DecimalMath::SCALE_RAW);
-        $low  = isset($config['low_risk_threshold']) ? DecimalMath::clean((string)$config['low_risk_threshold'], DecimalMath::SCALE_RAW) : '0.00000000';$high = isset($config['high_risk_threshold']) ? DecimalMath::clean((string)$config['high_risk_threshold'], DecimalMath::SCALE_RAW) : '100.00000000';
+        $method = (string) ($config['normalization_method'] ?? 'threshold_linear');
+        $direction = (string) ($config['direction_of_deterioration'] ?? 'higher_is_riskier');
 
         if ($method === 'threshold_linear') {
+            $low = Decimal::raw((string) ($config['low_risk_threshold'] ?? '0.00000000'));
+            $high = Decimal::raw((string) ($config['high_risk_threshold'] ?? '100.00000000'));
+
             if ($direction === 'higher_is_riskier') {
-                // v <= low => 0.0000; v >= high => 100.0000
-                if (DecimalMath::comp($val,$low, DecimalMath::SCALE_RAW) <= 0) {
-                    return '0.0000';
-                }
-                if (DecimalMath::comp($val,$high, DecimalMath::SCALE_RAW) >= 0) {
-                    return '100.0000';
+                if ($value->compareTo($low) <= 0) {
+                    return Decimal::score('0.0000');
                 }
 
-                $range = DecimalMath::sub($high, $low, DecimalMath::SCALE_RAW);$delta = DecimalMath::sub($val,$low, DecimalMath::SCALE_RAW);
-                return DecimalMath::mul(DecimalMath::div($delta,$range, DecimalMath::SCALE_RAW), '100.0000', DecimalMath::SCALE_SCORE);
+                if ($value->compareTo($high) >= 0) {
+                    return Decimal::score('100.0000');
+                }
+
+                return $value
+                    ->subtract($low)
+                    ->divide($high->subtract($low))
+                    ->multiply(Decimal::raw('100.00000000'))
+                    ->rounded(Decimal::SCALE_SCORE);
             }
 
             if ($direction === 'lower_is_riskier') {
-                // v >= low => 0.0000; v <= high => 100.0000
-                if (DecimalMath::comp($val,$low, DecimalMath::SCALE_RAW) >= 0) {
-                    return '0.0000';
-                }
-                if (DecimalMath::comp($val,$high, DecimalMath::SCALE_RAW) <= 0) {
-                    return '100.0000';
+                if ($value->compareTo($low) >= 0) {
+                    return Decimal::score('0.0000');
                 }
 
-                $range = DecimalMath::sub($low, $high, DecimalMath::SCALE_RAW);$delta = DecimalMath::sub($low,$val, DecimalMath::SCALE_RAW);
-                return DecimalMath::mul(DecimalMath::div($delta,$range, DecimalMath::SCALE_RAW), '100.0000', DecimalMath::SCALE_SCORE);
+                if ($value->compareTo($high) <= 0) {
+                    return Decimal::score('100.0000');
+                }
+
+                return $low
+                    ->subtract($value)
+                    ->divide($low->subtract($high))
+                    ->multiply(Decimal::raw('100.00000000'))
+                    ->rounded(Decimal::SCALE_SCORE);
             }
 
-            if ($direction === 'distance_from_target_is_riskier') {
-                $target = DecimalMath::clean((string)($config['target_value'] ?? '0.00000000'), DecimalMath::SCALE_RAW);
-                $maxDev = DecimalMath::clean((string)($config['max_deviation'] ?? '1.00000000'), DecimalMath::SCALE_RAW);
-
-                $diff = DecimalMath::abs(DecimalMath::sub($val, $target, DecimalMath::SCALE_RAW), DecimalMath::SCALE_RAW);$rawScore = DecimalMath::mul(DecimalMath::div($diff,$maxDev, DecimalMath::SCALE_RAW), '100.0000', DecimalMath::SCALE_SCORE);
-
-                return DecimalMath::min('100.0000', $rawScore, DecimalMath::SCALE_SCORE);
-            }
-
-            if ($direction === 'outside_band_is_riskier') {
-                $safeMin = DecimalMath::clean((string)($config['safe_min'] ?? $low), DecimalMath::SCALE_RAW);$safeMax = DecimalMath::clean((string)($config['safe_max'] ?? $high), DecimalMath::SCALE_RAW);
-
-                if (DecimalMath::comp($val,$safeMin, DecimalMath::SCALE_RAW) >= 0 && DecimalMath::comp($val,$safeMax, DecimalMath::SCALE_RAW) <= 0) {
-                    return '0.0000';
-                }
-
-                if (DecimalMath::comp($val, $safeMin, DecimalMath::SCALE_RAW) < 0) {$delta = DecimalMath::sub($safeMin,$val, DecimalMath::SCALE_RAW);
-                    $range = DecimalMath::sub($safeMin, $low, DecimalMath::SCALE_RAW);$score = DecimalMath::mul(DecimalMath::div($delta,$range, DecimalMath::SCALE_RAW), '100.0000', DecimalMath::SCALE_SCORE);
-                    return DecimalMath::min('100.0000', $score, DecimalMath::SCALE_SCORE);
-                }
-
-                $delta = DecimalMath::sub($val,$safeMax, DecimalMath::SCALE_RAW);
-                $range = DecimalMath::sub($high, $safeMax, DecimalMath::SCALE_RAW);$score = DecimalMath::mul(DecimalMath::div($delta,$range, DecimalMath::SCALE_RAW), '100.0000', DecimalMath::SCALE_SCORE);
-                return DecimalMath::min('100.0000', $score, DecimalMath::SCALE_SCORE);
-            }
+            throw new RuntimeException('Unsupported threshold_linear direction: ' . $direction);
         }
 
-        return '50.0000';
+        if ($method === 'distance_from_target_is_riskier') {
+            $target = Decimal::raw((string) ($config['target_value'] ?? '0.00000000'));
+            $maxDeviation = Decimal::raw((string) ($config['max_deviation'] ?? '1.00000000'));
+            $score = $value
+                ->subtract($target)
+                ->absolute()
+                ->divide($maxDeviation)
+                ->multiply(Decimal::raw('100.00000000'))
+                ->rounded(Decimal::SCALE_SCORE);
+
+            return $score->minimum(Decimal::score('100.0000'));
+        }
+
+        if ($method === 'outside_band_is_riskier') {
+            $outsideMin = Decimal::raw((string) ($config['outside_min'] ?? '0.00000000'));
+            $safeMin = Decimal::raw((string) ($config['safe_min'] ?? '0.00000000'));
+            $safeMax = Decimal::raw((string) ($config['safe_max'] ?? '0.00000000'));
+            $outsideMax = Decimal::raw((string) ($config['outside_max'] ?? '0.00000000'));
+
+            if (
+                !($outsideMin->compareTo($safeMin) < 0
+                && $safeMin->compareTo($safeMax) < 0
+                && $safeMax->compareTo($outsideMax) < 0)
+            ) {
+                throw new RuntimeException('outside_band_is_riskier requires outside_min < safe_min < safe_max < outside_max.');
+            }
+
+            if ($value->compareTo($safeMin) >= 0 && $value->compareTo($safeMax) <= 0) {
+                return Decimal::score('0.0000');
+            }
+
+            if ($value->compareTo($outsideMin) <= 0 || $value->compareTo($outsideMax) >= 0) {
+                return Decimal::score('100.0000');
+            }
+
+            if ($value->compareTo($safeMin) < 0) {
+                return $safeMin
+                    ->subtract($value)
+                    ->divide($safeMin->subtract($outsideMin))
+                    ->multiply(Decimal::raw('100.00000000'))
+                    ->rounded(Decimal::SCALE_SCORE);
+            }
+
+            return $value
+                ->subtract($safeMax)
+                ->divide($outsideMax->subtract($safeMax))
+                ->multiply(Decimal::raw('100.00000000'))
+                ->rounded(Decimal::SCALE_SCORE);
+        }
+
+        throw new RuntimeException('Unsupported normalization method: ' . $method);
     }
 
-    /**
-     * Determines qualitative risk band from a numeric risk score.
-     */
-    private function determineRiskBand(string $score): string
+    private function reconcileEffectiveWeights(array $rawWeights, array $details): array
     {
-        if (DecimalMath::comp($score, '25.0000', DecimalMath::SCALE_SCORE) < 0) {
-            return 'low';
+        $rounded = [];
+        $sum = Decimal::score('0.0000');
+
+        foreach ($rawWeights as $indicatorKey => $weight) {
+            $rounded[$indicatorKey] = $weight->rounded(Decimal::SCALE_SCORE)->toString();
+            $sum = $sum->add(Decimal::score($rounded[$indicatorKey]));
         }
-        if (DecimalMath::comp($score, '50.0000', DecimalMath::SCALE_SCORE) < 0) {
-            return 'moderate';
+
+        $delta = Decimal::score('100.0000')->subtract($sum);
+
+        if ($delta->isZero()) {
+            return $rounded;
         }
-        if (DecimalMath::comp($score, '75.0000', DecimalMath::SCALE_SCORE) < 0) {
-            return 'high';
+
+        $priority = array_keys($rounded);
+        usort($priority, function (string $left, string $right) use ($details): int {
+            $leftOriginal = Decimal::score((string) $details[$left]['original_weight']);
+            $rightOriginal = Decimal::score((string) $details[$right]['original_weight']);
+            $compareOriginal = $rightOriginal->compareTo($leftOriginal);
+
+            if ($compareOriginal !== 0) {
+                return $compareOriginal;
+            }
+
+            $leftDiscounted = Decimal::raw((string) $details[$left]['discounted_weight']);
+            $rightDiscounted = Decimal::raw((string) $details[$right]['discounted_weight']);
+            $compareDiscounted = $rightDiscounted->compareTo($leftDiscounted);
+
+            if ($compareDiscounted !== 0) {
+                return $compareDiscounted;
+            }
+
+            return strcmp($left, $right);
+        });
+
+        $step = Decimal::score('0.0001');
+        $index = 0;
+
+        while (!$delta->isZero()) {
+            $indicatorKey = $priority[$index % count($priority)];
+            $current = Decimal::score($rounded[$indicatorKey]);
+
+            if ($delta->isPositive()) {
+                $current = $current->add($step);
+                $delta = $delta->subtract($step);
+            } else {
+                $current = $current->subtract($step);
+                $delta = $delta->add($step);
+            }
+
+            $rounded[$indicatorKey] = $current->toString();
+            $index++;
         }
-        return 'critical';
+
+        return $rounded;
+    }
+
+    private function resolveRiskBand(Decimal $riskScore, array $bands): string
+    {
+        foreach ($bands as $bandKey => $band) {
+            $min = Decimal::score((string) ($band['min'] ?? '0.0000'));
+            $max = Decimal::score((string) ($band['max'] ?? '100.0000'));
+            $isLast = $bandKey === array_key_last($bands);
+
+            if ($riskScore->compareTo($min) >= 0) {
+                $withinUpper = $isLast
+                    ? $riskScore->compareTo($max) <= 0
+                    : $riskScore->compareTo($max) < 0;
+
+                if ($withinUpper) {
+                    return (string) $bandKey;
+                }
+            }
+        }
+
+        throw new RuntimeException('Unable to resolve risk band for score ' . $riskScore->toString());
     }
 }
