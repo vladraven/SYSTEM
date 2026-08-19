@@ -2,9 +2,26 @@
 
 **Version:** 2.0.0-json-native  
 **Status:** canonical source-access contract  
-**Verified:** 2026-08-13
+**Verified:** 2026-08-13  
+**Wiring reviewed:** 2026-08-18
 
-This file freezes the production HTTP contracts used by MacroRisk.
+This file freezes the official HTTP contracts used by MacroRisk. Implementation lives in `src/Core/Http/` and `src/Infrastructure/Source/`. The low-level curl example below is the policy; production code uses `HttpClient` + `CurlHttpTransport`, not a global `httpGetJson()` helper.
+
+## Production wiring (as built)
+
+`IngestionService` fetches only these series:
+
+| Indicator key | Adapter | Endpoint | Identifier | Transform |
+|---|---|---|---|---|
+| `policy_rate` | `BankOfCanadaClient` | Valet observations + series | V39079 | identity |
+| `bond_yield_10y` | `BankOfCanadaClient` | Valet observations + series | V122487 | identity |
+| `cpi_inflation` | `StatCanClient` | `getSeriesInfoFromVector`, `getDataFromVectorsAndLatestNPeriods` | 41690973 | YoY % from index |
+| `unemployment_rate` | `StatCanClient` | same | 2062815 | identity |
+| `housing_starts` | `StatCanClient` | same | 729949 | monthly × 12 |
+
+`OpenGovernmentClient` implements CKAN `package_search` / `package_show` against `https://open.canada.ca/data/en/api/3/action/` and is covered by adapter tests. No production indicator uses `source_key: open_government`.
+
+`StatCanSeriesReader` is the list-envelope parser. Current ingestion reads `StatCanClient` responses as a single `{status, object}` document (matching `tests/fixtures/http/`). Live WDS list envelopes should be parsed through the reader.
 
 ## 1. Source hierarchy
 

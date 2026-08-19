@@ -1,7 +1,13 @@
 MACRORISK — CANONICAL SYSTEM SPECIFICATION
 Version: 2.0.0-json-native
 Date: 2026-08-13
-Status: AUTHORITATIVE SOURCE OF TRUTH
+Status: AUTHORITATIVE TARGET SPECIFICATION
+
+This document is the target contract. It is not a changelog of the repository.
+As-built status, leftover files, and gaps versus this spec are recorded in
+IMPLEMENTATION_NOTES.md. Where running code disagrees with this file, the
+code is not automatically correct — close the gap or amend this specification
+explicitly.
 
 1. PURPOSE
 

@@ -42,3 +42,11 @@ A correlation is not automatically causation.
 A model score is not a forecast guarantee.
 
 The system must expose uncertainty and data limitations instead of hiding them.
+
+## Scenario layer
+
+The dashboard Scenario/Hypothesis Engine is interpretation plus hypothesis, never observation.
+
+Slider overrides recompute a simulated score in `calculation_mode: simulation`. Triggered branches are labelled `classification: hypothesis`. Production text for that layer is screened for the banned-phrase list in `promt.txt` §8.
+
+A simulated score must not be presented as the production score or as a forecast.
